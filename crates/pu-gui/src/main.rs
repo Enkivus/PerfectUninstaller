@@ -65,78 +65,30 @@ fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn palette_for(os: Os) -> Palette {
-    match os {
-        // macOS 26 "Liquid Glass": airy translucent layers, vibrant system blue,
-        // bright 1px specular edges, generous corner radii.
-        Os::Mac => Palette {
-            bg: rgba(24, 26, 33, 132),
-            sidebar: rgba(30, 33, 43, 96),
-            header: rgba(34, 37, 47, 130),
-            card: rgba(255, 255, 255, 22),
-            card_stroke: rgba(255, 255, 255, 46),
-            control: rgba(255, 255, 255, 26),
-            control_hover: rgba(255, 255, 255, 46),
-            control_active: rgba(10, 132, 255, 120),
-            text: Color32::from_rgb(245, 246, 250),
-            dim: Color32::from_rgb(170, 176, 192),
-            accent: Color32::from_rgb(10, 132, 255),
-            accent_fill: Color32::from_rgb(10, 132, 255),
-            accent_soft: rgba(10, 132, 255, 72),
-            danger: Color32::from_rgb(255, 96, 86),
-            danger_fill: Color32::from_rgb(214, 61, 55),
-            ok: Color32::from_rgb(48, 209, 88),
-            warn: Color32::from_rgb(255, 214, 10),
-            border: rgba(255, 255, 255, 40),
-            window_fill: rgba(30, 33, 43, 232),
-            radius: 12,
-        },
-        // Windows 11 Fluent: Mica base, subtle 5%–10% white layers, 8px radii,
-        // system accent, restrained borders.
-        Os::Windows => Palette {
-            bg: rgba(32, 32, 32, 180),
-            sidebar: rgba(40, 40, 40, 150),
-            header: rgba(44, 44, 44, 170),
-            card: rgba(255, 255, 255, 15),
-            card_stroke: rgba(255, 255, 255, 28),
-            control: rgba(255, 255, 255, 18),
-            control_hover: rgba(255, 255, 255, 32),
-            control_active: rgba(96, 205, 255, 110),
-            text: Color32::from_rgb(255, 255, 255),
-            dim: Color32::from_rgb(200, 200, 200),
-            accent: Color32::from_rgb(96, 205, 255),
-            accent_fill: Color32::from_rgb(0, 103, 192),
-            accent_soft: rgba(96, 205, 255, 64),
-            danger: Color32::from_rgb(255, 153, 164),
-            danger_fill: Color32::from_rgb(196, 43, 28),
-            ok: Color32::from_rgb(108, 203, 95),
-            warn: Color32::from_rgb(252, 225, 0),
-            border: rgba(255, 255, 255, 26),
-            window_fill: rgba(44, 44, 44, 240),
-            radius: 8,
-        },
-        Os::Linux => Palette {
-            bg: Color32::from_rgb(20, 22, 26),
-            sidebar: Color32::from_rgb(27, 30, 36),
-            header: Color32::from_rgb(22, 24, 29),
-            card: Color32::from_rgb(32, 36, 44),
-            card_stroke: Color32::from_rgb(52, 58, 70),
-            control: Color32::from_rgb(40, 45, 54),
-            control_hover: Color32::from_rgb(52, 59, 72),
-            control_active: Color32::from_rgb(58, 72, 122),
-            text: Color32::from_rgb(226, 230, 238),
-            dim: Color32::from_rgb(150, 156, 170),
-            accent: Color32::from_rgb(122, 150, 255),
-            accent_fill: Color32::from_rgb(96, 124, 230),
-            accent_soft: Color32::from_rgb(58, 72, 122),
-            danger: Color32::from_rgb(235, 110, 110),
-            danger_fill: Color32::from_rgb(196, 62, 62),
-            ok: Color32::from_rgb(110, 200, 140),
-            warn: Color32::from_rgb(235, 180, 90),
-            border: Color32::from_rgb(52, 58, 70),
-            window_fill: Color32::from_rgb(32, 36, 44),
-            radius: 10,
-        },
+fn palette_for(_os: Os) -> Palette {
+    // A consistent, calm surface system across platforms: neutral canvas,
+    // white content surfaces, and a restrained evergreen action color.
+    Palette {
+        bg: Color32::from_rgb(243, 246, 248),
+        sidebar: Color32::from_rgb(237, 241, 244),
+        header: Color32::from_rgb(250, 252, 253),
+        card: Color32::WHITE,
+        card_stroke: Color32::from_rgb(224, 230, 234),
+        control: Color32::from_rgb(247, 249, 250),
+        control_hover: Color32::from_rgb(232, 240, 239),
+        control_active: Color32::from_rgb(210, 232, 227),
+        text: Color32::from_rgb(27, 40, 47),
+        dim: Color32::from_rgb(100, 115, 124),
+        accent: Color32::from_rgb(13, 116, 101),
+        accent_fill: Color32::from_rgb(13, 116, 101),
+        accent_soft: Color32::from_rgb(222, 240, 236),
+        danger: Color32::from_rgb(184, 62, 54),
+        danger_fill: Color32::from_rgb(176, 54, 48),
+        ok: Color32::from_rgb(27, 131, 91),
+        warn: Color32::from_rgb(169, 111, 22),
+        border: Color32::from_rgb(215, 224, 227),
+        window_fill: Color32::WHITE,
+        radius: 12,
     }
 }
 
@@ -145,86 +97,11 @@ fn pal() -> &'static Palette {
     PALETTE.get_or_init(|| palette_for(current_os()))
 }
 
-struct Blob {
-    x: f32,
-    y: f32,
-    r: f32,
-    rgb: (f32, f32, f32),
-    strength: f32,
-}
-
-fn backdrop_color(os: Os, fx: f32, fy: f32) -> Color32 {
-    let (base, blobs): ((f32, f32, f32), &[Blob]) = match os {
-        Os::Mac => (
-            (16.0, 18.0, 28.0),
-            &[
-                Blob { x: 0.16, y: 0.10, r: 0.62, rgb: (44.0, 96.0, 255.0), strength: 62.0 },
-                Blob { x: 0.92, y: 0.22, r: 0.60, rgb: (198.0, 70.0, 190.0), strength: 50.0 },
-                Blob { x: 0.72, y: 0.98, r: 0.66, rgb: (28.0, 168.0, 224.0), strength: 46.0 },
-                Blob { x: 0.02, y: 0.92, r: 0.60, rgb: (122.0, 62.0, 236.0), strength: 46.0 },
-            ],
-        ),
-        Os::Windows => (
-            (34.0, 36.0, 42.0),
-            &[
-                Blob { x: 0.14, y: 0.06, r: 0.85, rgb: (56.0, 92.0, 176.0), strength: 26.0 },
-                Blob { x: 0.94, y: 0.86, r: 0.90, rgb: (36.0, 120.0, 150.0), strength: 20.0 },
-                Blob { x: 0.55, y: 0.45, r: 0.95, rgb: (70.0, 70.0, 96.0), strength: 14.0 },
-            ],
-        ),
-        Os::Linux => ((19.0, 21.0, 25.0), &[]),
-    };
-
-    let mut r = base.0;
-    let mut g = base.1;
-    let mut b = base.2;
-    for blob in blobs {
-        let dx = fx - blob.x;
-        let dy = fy - blob.y;
-        let d2 = dx * dx + dy * dy;
-        let w = (-d2 / (2.0 * blob.r * blob.r)).exp() * blob.strength;
-        r += blob.rgb.0 * w / 100.0;
-        g += blob.rgb.1 * w / 100.0;
-        b += blob.rgb.2 * w / 100.0;
-    }
-    let c = |v: f32| v.clamp(0.0, 255.0) as u8;
-    Color32::from_rgb(c(r), c(g), c(b))
-}
-
 fn paint_backdrop(ui: &egui::Ui) {
     let rect = ui.available_rect_before_wrap();
-    if !rect.is_positive() {
-        return;
-    }
-    let os = current_os();
-    if os == Os::Linux {
+    if rect.is_positive() {
         ui.painter().rect_filled(rect, 0, pal().bg);
-        return;
     }
-    let cols = 32usize;
-    let rows = 20usize;
-    let mut mesh = egui::Mesh::default();
-    for iy in 0..=rows {
-        for ix in 0..=cols {
-            let fx = ix as f32 / cols as f32;
-            let fy = iy as f32 / rows as f32;
-            let pos = egui::pos2(
-                rect.left() + fx * rect.width(),
-                rect.top() + fy * rect.height(),
-            );
-            mesh.colored_vertex(pos, backdrop_color(os, fx, fy));
-        }
-    }
-    for iy in 0..rows {
-        for ix in 0..cols {
-            let i = (iy * (cols + 1) + ix) as u32;
-            let right = i + 1;
-            let down = i + (cols as u32 + 1);
-            mesh.add_triangle(i, right, down);
-            mesh.add_triangle(right, down + 1, down);
-        }
-    }
-    ui.painter().add(egui::Shape::mesh(mesh));
 }
 
 enum Job {
@@ -444,14 +321,34 @@ impl App {
     }
 }
 
+impl App {
+    fn shortcuts(&mut self, ctx: &egui::Context) {
+        if self.confirm != ConfirmStage::None || self.show_about {
+            return;
+        }
+        let (rescan, escape) = ctx.input_mut(|i| {
+            (
+                i.modifiers.command && i.key_pressed(egui::Key::R),
+                i.key_pressed(egui::Key::Escape),
+            )
+        });
+        if rescan {
+            self.spawn_scan();
+        } else if escape {
+            if self.report.is_some() {
+                self.report = None;
+            } else if self.plan.is_some() {
+                self.plan = None;
+                self.checked.clear();
+                self.selected = None;
+            }
+        }
+    }
+}
+
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        let p = pal();
-        match current_os() {
-            Os::Mac => [0.055, 0.06, 0.075, 1.0],
-            Os::Windows => [0.125, 0.125, 0.125, 1.0],
-            Os::Linux => p.bg.to_normalized_gamma_f32(),
-        }
+        pal().bg.to_normalized_gamma_f32()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -591,6 +488,7 @@ impl eframe::App for App {
 
         self.confirm_modal(&ctx);
         self.about_modal(&ctx);
+        self.shortcuts(&ctx);
     }
 }
 
@@ -611,11 +509,13 @@ impl App {
         };
 
         ui.horizontal(|ui| {
-            section_title(ui, "Applications");
+            section_title(ui, "Your software");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(format!("{count}")).small().color(pal().dim));
+                badge(ui, &format!("{count}"), pal().dim, pal().card);
             });
         });
+        ui.add_space(4.0);
+        ui.label(RichText::new("Select an app to inspect its leftovers").size(11.5).color(pal().dim));
         ui.add_space(10.0);
         ui.add(
             egui::TextEdit::singleline(&mut self.filter)
@@ -623,6 +523,9 @@ impl App {
                 .desired_width(f32::INFINITY),
         );
         ui.add_space(12.0);
+
+        ui.separator();
+        ui.add_space(5.0);
 
         if self.busy == Busy::Scan && self.apps.is_empty() {
             ui.add_space(24.0);
@@ -654,6 +557,7 @@ impl App {
         egui::ScrollArea::vertical()
             .id_salt("apps_scroll")
             .auto_shrink([false, false])
+            .max_height((ui.available_height() - 42.0).max(100.0))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
                 if filtered.is_empty() {
@@ -670,6 +574,14 @@ impl App {
                     }
                 }
             });
+
+        ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("●").size(9.0).color(pal().ok));
+                ui.label(RichText::new("Review every item before removal").size(10.5).color(pal().dim));
+            });
+        });
     }
 
     fn welcome_view(&mut self, ui: &mut egui::Ui) {
@@ -1016,20 +928,41 @@ impl App {
     }
 
     fn report_view(&mut self, ui: &mut egui::Ui, report: &RemovalReport) {
-        ui.add_space(6.0);
+        if ui.add(ghost_button("← Back to app list")).clicked() {
+            self.report = None;
+            return;
+        }
+        ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("✓").color(pal().ok).size(28.0).strong());
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
+            ui.painter()
+                .circle_filled(rect.center(), 22.0, rgba(48, 209, 88, 60));
+            ui.painter()
+                .circle_stroke(rect.center(), 22.0, Stroke::new(1.5, pal().ok));
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "✓",
+                egui::FontId::proportional(22.0),
+                pal().ok,
+            );
             ui.vertical(|ui| {
-                ui.label(RichText::new("Uninstall complete").size(22.0).strong());
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.label(
+                    RichText::new("Uninstall complete")
+                        .size(23.0)
+                        .strong()
+                        .color(pal().text),
+                );
                 ui.label(
                     RichText::new("The selected items were permanently deleted.")
-                        .color(pal().dim)
-                        .small(),
+                        .size(12.5)
+                        .color(pal().dim),
                 );
             });
         });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.horizontal(|ui| {
             stat_card(ui, "Items removed", &format!("{}", report.removed.len()), pal().ok);
             stat_card(ui, "Space freed", &format_bytes(report.bytes_freed), pal().ok);
@@ -1042,76 +975,102 @@ impl App {
             );
         });
 
+        ui.add_space(16.0);
         egui::ScrollArea::vertical()
             .id_salt("report_scroll")
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 if !report.refused.is_empty() {
-                    ui.add_space(12.0);
-                    ui.colored_label(
-                        pal().warn,
-                        format!(
-                            "{} path(s) refused by safety guards (left untouched):",
+                    ui.add_space(6.0);
+                    warning_row(
+                        ui,
+                        &format!(
+                            "{} path(s) were refused by the safety guards and left untouched.",
                             report.refused.len()
                         ),
                     );
-                    for path in &report.refused {
-                        ui.label(RichText::new(path.display().to_string()).monospace().small());
-                    }
+                    glass_card(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        for path in &report.refused {
+                            ui.label(RichText::new(path.display().to_string()).monospace().size(11.5));
+                        }
+                    });
                 }
 
                 if !report.failed.is_empty() {
                     ui.add_space(12.0);
-                    ui.colored_label(
-                        pal().danger,
-                        format!("{} path(s) could not be removed:", report.failed.len()),
-                    );
-                    for failure in &report.failed {
+                    glass_card(ui, |ui| {
+                        ui.set_max_width(f32::INFINITY);
                         ui.label(
                             RichText::new(format!(
-                                "{} — {}",
-                                failure.path.display(),
-                                failure.message
+                                "{} path(s) could not be removed",
+                                report.failed.len()
                             ))
-                            .monospace()
-                            .small(),
+                            .color(pal().danger)
+                            .strong(),
                         );
-                    }
+                        ui.add_space(6.0);
+                        for failure in &report.failed {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} — {}",
+                                    shorten(&failure.path.display().to_string(), 70),
+                                    failure.message
+                                ))
+                                .monospace()
+                                .size(11.5),
+                            );
+                        }
+                    });
                 }
 
                 ui.add_space(12.0);
                 if let Some(audit) = &report.audit_log {
-                    ui.label(
-                        RichText::new(format!("Audit log: {}", audit.display()))
-                            .weak()
-                            .small(),
-                    );
-                }
-                if let Some(dir) = &report.report_dir {
-                    ui.add_space(6.0);
-                    ui.label(
-                        RichText::new(format!("Exported report: {}", dir.display()))
-                            .weak()
-                            .small(),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button("Open report folder").clicked() {
-                            let _ = open_path(dir);
-                        }
-                        if ui.button("Open HTML report").clicked() {
-                            let _ = open_path(&dir.join("report.html"));
-                        }
-                        if ui.small_button("Copy path").clicked() {
-                            ui.ctx().copy_text(dir.display().to_string());
-                        }
+                    glass_card(ui, |ui| {
+                        ui.set_max_width(f32::INFINITY);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Audit log").strong().size(12.0));
+                            ui.label(
+                                RichText::new(shorten(&audit.display().to_string(), 70))
+                                    .monospace()
+                                    .size(11.0)
+                                    .color(pal().dim),
+                            );
+                            if ui.add(ghost_button("Open")).clicked() {
+                                let _ = open_path(audit);
+                            }
+                        });
                     });
                 }
+                if let Some(dir) = &report.report_dir {
+                    ui.add_space(8.0);
+                    glass_card(ui, |ui| {
+                        ui.set_max_width(f32::INFINITY);
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("Exported report").strong().size(12.0));
+                            ui.label(
+                                RichText::new(shorten(&dir.display().to_string(), 60))
+                                    .monospace()
+                                    .size(11.0)
+                                    .color(pal().dim),
+                            );
+                        });
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.add(ghost_button("Open folder")).clicked() {
+                                let _ = open_path(dir);
+                            }
+                            if ui.add(primary_button("Open HTML report")).clicked() {
+                                let _ = open_path(&dir.join("report.html"));
+                            }
+                            if ui.add(ghost_button("Copy path")).clicked() {
+                                ui.ctx().copy_text(dir.display().to_string());
+                            }
+                        });
+                    });
+                }
+                ui.add_space(8.0);
             });
-
-        ui.add_space(14.0);
-        if ui.add(ghost_button("← Back to app list")).clicked() {
-            self.report = None;
-        }
     }
 
     fn confirm_modal(&mut self, ctx: &egui::Context) {
@@ -1380,13 +1339,13 @@ impl App {
 }
 
 fn install_theme(ctx: &egui::Context) {
-    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_theme(egui::Theme::Light);
     let p = pal();
 
-    let mut visuals = egui::Visuals::dark();
+    let mut visuals = egui::Visuals::light();
     visuals.panel_fill = Color32::TRANSPARENT;
     visuals.window_fill = p.window_fill;
-    visuals.extreme_bg_color = rgba(10, 12, 18, 190);
+    visuals.extreme_bg_color = Color32::from_rgb(245, 248, 249);
     visuals.faint_bg_color = p.card;
     visuals.code_bg_color = rgba(255, 255, 255, 10);
     visuals.hyperlink_color = p.accent;
@@ -1395,10 +1354,10 @@ fn install_theme(ctx: &egui::Context) {
     visuals.window_corner_radius = CornerRadius::same(p.radius + 6);
     visuals.window_stroke = Stroke::new(1.0, p.border);
     visuals.window_shadow = egui::Shadow {
-        offset: [0, 18],
-        blur: 48,
+        offset: [0, 10],
+        blur: 28,
         spread: 0,
-        color: Color32::from_black_alpha(140),
+        color: rgba(27, 40, 47, 28),
     };
 
     let r = CornerRadius::same(p.radius);
@@ -1449,7 +1408,7 @@ fn primary_text() -> Color32 {
     Color32::WHITE
 }
 
-fn primary_button(text: &str) -> egui::Button {
+fn primary_button(text: &'static str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text).color(primary_text()).strong())
         .fill(pal().accent_fill)
         .stroke(Stroke::new(1.0, pal().accent))
@@ -1457,7 +1416,7 @@ fn primary_button(text: &str) -> egui::Button {
         .min_size(Vec2::new(0.0, 34.0))
 }
 
-fn danger_button(text: &str) -> egui::Button {
+fn danger_button(text: &'static str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text).color(primary_text()).strong())
         .fill(pal().danger_fill)
         .stroke(Stroke::new(1.0, pal().danger))
@@ -1465,7 +1424,7 @@ fn danger_button(text: &str) -> egui::Button {
         .min_size(Vec2::new(0.0, 34.0))
 }
 
-fn ghost_button(text: &str) -> egui::Button {
+fn ghost_button(text: &'static str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text).color(pal().text))
         .fill(pal().control)
         .stroke(Stroke::new(1.0, pal().card_stroke))
@@ -1537,8 +1496,8 @@ fn glass_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new()
         .fill(pal().card)
         .stroke(Stroke::new(1.0, pal().card_stroke))
-        .corner_radius(CornerRadius::same(pal().radius))
-        .inner_margin(Margin::symmetric(12, 8))
+        .corner_radius(CornerRadius::same(pal().radius + 2))
+        .inner_margin(Margin::symmetric(18, 14))
         .show(ui, add_contents);
 }
 
@@ -1707,10 +1666,10 @@ fn badge(ui: &mut egui::Ui, text: &str, fg: Color32, bg: Color32) {
     egui::Frame::new()
         .fill(bg)
         .stroke(Stroke::new(1.0, pal().card_stroke))
-        .corner_radius(CornerRadius::same(6))
-        .inner_margin(Margin::symmetric(8, 2))
+        .corner_radius(CornerRadius::same(99))
+        .inner_margin(Margin::symmetric(9, 2))
         .show(ui, |ui| {
-            ui.label(RichText::new(text).color(fg).small().strong());
+            ui.label(RichText::new(text).color(fg).size(11.5).strong());
         });
 }
 
@@ -1719,27 +1678,28 @@ fn stat_card(ui: &mut egui::Ui, title: &str, value: &str, accent: Color32) {
         .fill(pal().card)
         .stroke(Stroke::new(1.0, pal().card_stroke))
         .corner_radius(CornerRadius::same(pal().radius))
-        .inner_margin(Margin::symmetric(14, 10))
+        .inner_margin(Margin::symmetric(16, 12))
         .show(ui, |ui| {
-            ui.set_min_width(120.0);
+            ui.set_min_width(126.0);
             ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 2.0;
-                ui.label(RichText::new(title).small().color(pal().dim));
-                ui.label(RichText::new(value).size(18.0).strong().color(accent));
+                ui.spacing_mut().item_spacing.y = 3.0;
+                ui.label(RichText::new(title).size(11.5).color(pal().dim));
+                ui.label(RichText::new(value).size(19.0).strong().color(accent));
             });
         });
 }
 
 fn warning_row(ui: &mut egui::Ui, text: &str) {
     egui::Frame::new()
-        .fill(rgba(120, 90, 20, 90))
-        .stroke(Stroke::new(1.0, rgba(255, 214, 10, 70)))
+        .fill(rgba(150, 110, 20, 46))
+        .stroke(Stroke::new(1.0, rgba(255, 214, 10, 60)))
         .corner_radius(CornerRadius::same(pal().radius))
-        .inner_margin(Margin::symmetric(12, 8))
+        .inner_margin(Margin::symmetric(14, 10))
         .show(ui, |ui| {
+            ui.set_max_width(f32::INFINITY);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("⚠").color(pal().warn));
-                ui.label(RichText::new(text).color(pal().warn).small());
+                ui.label(RichText::new("⚠").color(pal().warn).size(14.0));
+                ui.label(RichText::new(text).color(pal().warn).size(12.5));
             });
         });
 }
