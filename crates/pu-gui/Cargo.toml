@@ -13,3 +13,6 @@ path = "src/main.rs"
 pu-core = { path = "../pu-core" }
 eframe = "0.36"
 serde_json.workspace = true
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+window-vibrancy = "0.8"

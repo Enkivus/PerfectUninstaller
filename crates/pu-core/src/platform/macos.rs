@@ -417,14 +417,29 @@ impl PlatformBackend for MacosBackend {
     }
 
     fn detect(&self, app: &InstalledApp) -> Vec<Advisory> {
-        let mut found = Vec::new();
-        found.extend(scan_shell_env(app));
-        found.extend(scan_firewall(app));
-        found.extend(scan_browser_extensions(app));
-        found.extend(scan_login_items(app));
-        found.extend(scan_scheduled_tasks(app));
-        found.extend(scan_extensions(app));
-        found.extend(scan_permissions(app));
+        let scans: [fn(&InstalledApp) -> Vec<Advisory>; 7] = [
+            scan_shell_env,
+            scan_firewall,
+            scan_browser_extensions,
+            scan_login_items,
+            scan_scheduled_tasks,
+            scan_extensions,
+            scan_permissions,
+        ];
+
+        let mut found: Vec<Advisory> = std::thread::scope(|scope| {
+            let handles: Vec<_> = scans
+                .iter()
+                .map(|scan| scope.spawn(move || scan(app)))
+                .collect();
+            let mut merged = Vec::new();
+            for handle in handles {
+                if let Ok(mut items) = handle.join() {
+                    merged.append(&mut items);
+                }
+            }
+            merged
+        });
 
         found.sort_by(|a, b| {
             a.kind
