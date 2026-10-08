@@ -1,0 +1,30 @@
+# Local-only context file (never committed)
+instructions.md
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Build output
+target/
+dist/
+build/
+out/
+*.egg-info/
+
+# Environment / secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

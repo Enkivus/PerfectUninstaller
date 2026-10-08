@@ -1,0 +1,16 @@
+[package]
+name = "pu-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cross-platform uninstall engine: discovery, residual trace analysis, and removal"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+plist.workspace = true
+chrono.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"

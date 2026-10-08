@@ -1,0 +1,15 @@
+[package]
+name = "pu-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PerfectUninstaller graphical front end"
+
+[[bin]]
+name = "perfect-uninstaller"
+path = "src/main.rs"
+
+[dependencies]
+pu-core = { path = "../pu-core" }
+eframe = "0.36"
+serde_json.workspace = true
