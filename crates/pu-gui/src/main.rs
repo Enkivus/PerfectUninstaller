@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
@@ -356,6 +356,40 @@ impl App {
             });
         }
 
+        if !plan.advisories.is_empty() {
+            ui.add_space(4.0);
+            let title = format!(
+                "System configuration findings ({} — detected, not changed automatically)",
+                plan.advisories.len()
+            );
+            egui::CollapsingHeader::new(title)
+                .default_open(false)
+                .show(ui, |ui| {
+                    for advisory in &plan.advisories {
+                        ui.add_space(4.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new(advisory.kind.label()).strong());
+                            ui.colored_label(Color32::from_rgb(200, 140, 60), &advisory.summary);
+                        });
+                        if let Some(path) = &advisory.path {
+                            ui.label(
+                                RichText::new(path.display().to_string()).monospace().small().weak(),
+                            );
+                        }
+                        ui.label(RichText::new(&advisory.detail).small());
+                        if let Some(command) = &advisory.command {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new(command).monospace().small());
+                                if ui.small_button("Copy command").clicked() {
+                                    ui.ctx().copy_text(command.clone());
+                                }
+                            });
+                        }
+                        ui.separator();
+                    }
+                });
+        }
+
         let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
         let selected_bytes = plan.selected_bytes(&selected);
 
@@ -500,6 +534,26 @@ impl App {
             );
         }
 
+        if let Some(dir) = &report.report_dir {
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(format!("Exported report: {}", dir.display()))
+                    .weak()
+                    .small(),
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Open report folder").clicked() {
+                    let _ = open_path(dir);
+                }
+                if ui.button("Open HTML report").clicked() {
+                    let _ = open_path(&dir.join("report.html"));
+                }
+                if ui.small_button("Copy folder path").clicked() {
+                    ui.ctx().copy_text(dir.display().to_string());
+                }
+            });
+        }
+
         ui.add_space(12.0);
         if ui.button("← Back to app list").clicked() {
             self.report = None;
@@ -560,6 +614,17 @@ impl App {
             self.confirm = false;
         }
     }
+}
+
+fn open_path(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let program = "xdg-open";
+
+    std::process::Command::new(program).arg(path).spawn().map(|_| ())
 }
 
 fn shorten(path: &str, max: usize) -> String {

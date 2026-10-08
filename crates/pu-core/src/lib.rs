@@ -8,6 +8,7 @@ pub mod engine;
 pub mod error;
 pub mod models;
 pub mod platform;
+pub mod report;
 pub mod safety;
 pub mod trace_search;
 pub mod util;

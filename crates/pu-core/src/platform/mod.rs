@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::error::Result;
-use crate::models::{InstalledApp, Platform, RemovalPlan};
+use crate::models::{Advisory, InstalledApp, Platform, RemovalPlan};
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -24,6 +24,13 @@ pub trait PlatformBackend: Send + Sync {
     /// Directories the engine may search and delete inside. Removal refuses
     /// any path outside these roots plus the app's own install paths.
     fn trace_roots(&self) -> Vec<PathBuf>;
+
+    /// System configuration the app touched that must never be edited behind
+    /// the user's back (firewall, env vars, browser extensions, permissions…).
+    /// Default: nothing to report.
+    fn detect(&self, _app: &InstalledApp) -> Vec<Advisory> {
+        Vec::new()
+    }
 }
 
 pub fn backend() -> Box<dyn PlatformBackend> {

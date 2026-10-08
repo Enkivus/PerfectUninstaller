@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 use crate::models::{
-    Confidence, InstallMethod, InstalledApp, Platform, RemovalPlan, TraceCandidate,
-    TraceCategory,
+    Advisory, AdvisoryKind, Confidence, InstallMethod, InstalledApp, Platform, RemovalPlan,
+    TraceCandidate, TraceCategory,
 };
 use crate::platform::PlatformBackend;
 use crate::trace_search::{find_traces, Query, SearchRoot};
@@ -45,6 +45,24 @@ fn search_roots() -> Vec<SearchRoot> {
         ),
         root(h("Library/Caches"), TraceCategory::Cache, 0, "~/Library/Caches"),
         root(h("Library/Logs"), TraceCategory::Log, 0, "~/Library/Logs"),
+        root(
+            h("Library/Logs/DiagnosticReports"),
+            TraceCategory::CrashReport,
+            0,
+            "~/Library/Logs/DiagnosticReports",
+        ),
+        root(
+            h("Library/Application Support/CrashReporter"),
+            TraceCategory::CrashReport,
+            0,
+            "~/Library/Application Support/CrashReporter",
+        ),
+        root(
+            PathBuf::from("/Library/Logs/DiagnosticReports"),
+            TraceCategory::CrashReport,
+            0,
+            "/Library/Logs/DiagnosticReports",
+        ),
         root(h("Library/Containers"), TraceCategory::Container, 1, "~/Library/Containers"),
         root(
             h("Library/Group Containers"),
@@ -379,8 +397,43 @@ impl PlatformBackend for MacosBackend {
             );
         }
 
+        let advisories = self.detect(app);
+        if !advisories.is_empty() {
+            warnings.push(format!(
+                "{} system-configuration finding(s) are reported below but are \
+                 never changed automatically — review and undo them yourself.",
+                advisories.len()
+            ));
+        }
+
         let total_bytes = candidates.iter().map(|c| c.bytes).sum();
-        Ok(RemovalPlan { app: app.clone(), candidates, total_bytes, warnings })
+        Ok(RemovalPlan {
+            app: app.clone(),
+            candidates,
+            advisories,
+            total_bytes,
+            warnings,
+        })
+    }
+
+    fn detect(&self, app: &InstalledApp) -> Vec<Advisory> {
+        let mut found = Vec::new();
+        found.extend(scan_shell_env(app));
+        found.extend(scan_firewall(app));
+        found.extend(scan_browser_extensions(app));
+        found.extend(scan_login_items(app));
+        found.extend(scan_scheduled_tasks(app));
+        found.extend(scan_extensions(app));
+        found.extend(scan_permissions(app));
+
+        found.sort_by(|a, b| {
+            a.kind
+                .label()
+                .cmp(b.kind.label())
+                .then_with(|| a.path.cmp(&b.path))
+        });
+        found.dedup_by(|a, b| a.kind == b.kind && a.path == b.path && a.summary == b.summary);
+        found
     }
 
     fn trace_roots(&self) -> Vec<PathBuf> {
@@ -396,9 +449,372 @@ impl PlatformBackend for MacosBackend {
     }
 }
 
+// ---------------------------------------------------------------------------
+// System-change detection (report only — never auto-edited)
+// ---------------------------------------------------------------------------
+
+/// Runs a read-only command, returning stdout on success. Returns `None` when
+/// the binary is missing or the command fails.
+fn run_read(program: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new(program).args(args).output().ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Lower-cased strings that identify the app inside config text.
+fn app_needles(app: &InstalledApp) -> Vec<String> {
+    let mut needles = vec![app.name.to_lowercase()];
+    if let Some(id) = &app.identifier {
+        needles.push(id.to_lowercase());
+    }
+    for path in &app.install_paths {
+        needles.push(path.to_string_lossy().to_lowercase());
+    }
+    needles.retain(|n| !n.trim().is_empty());
+    needles
+}
+
+fn references(haystack: &str, needles: &[String]) -> bool {
+    let lower = haystack.to_lowercase();
+    needles.iter().any(|n| lower.contains(n.as_str()))
+}
+
+/// Numbered lines from `text` that mention any needle (pure, unit-tested).
+fn matching_lines(text: &str, needles: &[String]) -> Vec<String> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| references(line, needles))
+        .map(|(i, line)| format!("{}: {}", i + 1, line.trim()))
+        .take(20)
+        .collect()
+}
+
+const SHELL_RC: &[&str] = &[
+    ".zshrc",
+    ".zprofile",
+    ".zshenv",
+    ".bashrc",
+    ".bash_profile",
+    ".profile",
+];
+
+fn scan_shell_env(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let mut found = Vec::new();
+
+    for rel in SHELL_RC {
+        let path = home().join(rel);
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let hits = matching_lines(&text, &needles);
+        if !hits.is_empty() {
+            found.push(Advisory {
+                kind: AdvisoryKind::EnvironmentVariable,
+                summary: format!("{} line(s) in {rel} mention this app", hits.len()),
+                detail: format!(
+                    "Shell config still references this app (PATH entries, aliases, env vars):\n{}",
+                    hits.join("\n")
+                ),
+                command: Some(format!("${{EDITOR:-vi}} \"{}\"", path.display())),
+                path: Some(path),
+            });
+        }
+    }
+
+    for dir in ["/etc/paths.d", "/etc/profile.d"] {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            if references(&text, &needles) {
+                found.push(Advisory {
+                    kind: AdvisoryKind::EnvironmentVariable,
+                    summary: format!("System path entry {} references this app", path.display()),
+                    detail: text.trim().to_string(),
+                    command: Some(format!("sudo rm \"{}\"", path.display())),
+                    path: Some(path),
+                });
+            }
+        }
+    }
+
+    found
+}
+
+fn scan_firewall(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let mut found = Vec::new();
+
+    if let Some(listing) = run_read(
+        "/usr/libexec/ApplicationFirewall/socketfilterfw",
+        &["--listapps"],
+    ) {
+        for line in listing.lines() {
+            if let Some(app_path) = line.trim().strip_prefix("ALF: Application:") {
+                let app_path = app_path.trim();
+                if references(app_path, &needles) {
+                    found.push(Advisory {
+                        kind: AdvisoryKind::FirewallRule,
+                        summary: format!("Application firewall entry for {app_path}"),
+                        detail: "The macOS application firewall has an explicit allow/deny rule for this app."
+                            .into(),
+                        command: Some(format!(
+                            "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --remove \"{app_path}\""
+                        )),
+                        path: Some(PathBuf::from(app_path)),
+                    });
+                }
+            }
+        }
+    }
+
+    if let Ok(text) = fs::read_to_string("/etc/pf.conf") {
+        let hits = matching_lines(&text, &needles);
+        if !hits.is_empty() {
+            found.push(Advisory {
+                kind: AdvisoryKind::FirewallRule,
+                summary: "Referenced in the pf firewall config".into(),
+                detail: hits.join("\n"),
+                command: Some("sudo \"${EDITOR:-vi}\" /etc/pf.conf && sudo pfctl -f /etc/pf.conf".into()),
+                path: Some(PathBuf::from("/etc/pf.conf")),
+            });
+        }
+    }
+
+    found
+}
+
+const BROWSER_ROOTS: &[(&str, &str)] = &[
+    ("Library/Application Support/Google/Chrome", "Chrome"),
+    ("Library/Application Support/Chromium", "Chromium"),
+    ("Library/Application Support/BraveSoftware/Brave-Browser", "Brave"),
+    ("Library/Application Support/Microsoft Edge", "Edge"),
+];
+
+fn scan_browser_extensions(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let mut found = Vec::new();
+
+    for (rel, browser) in BROWSER_ROOTS {
+        let root = h(rel);
+        if let Ok(profiles) = fs::read_dir(&root) {
+            for profile in profiles.flatten() {
+                let ext_root = profile.path().join("Extensions");
+                let Ok(extensions) = fs::read_dir(&ext_root) else {
+                    continue;
+                };
+                for extension in extensions.flatten() {
+                    let Ok(versions) = fs::read_dir(extension.path()) else {
+                        continue;
+                    };
+                    for version in versions.flatten() {
+                        let manifest = version.path().join("manifest.json");
+                        let Ok(text) = fs::read_to_string(&manifest) else {
+                            continue;
+                        };
+                        if references(&text, &needles) {
+                            found.push(Advisory {
+                                kind: AdvisoryKind::BrowserExtension,
+                                summary: format!(
+                                    "{browser} extension under {} references this app",
+                                    profile.file_name().to_string_lossy()
+                                ),
+                                detail: format!(
+                                    "Extension: {}\n{}",
+                                    extension.file_name().to_string_lossy(),
+                                    text.chars().take(400).collect::<String>()
+                                ),
+                                command: None,
+                                path: Some(manifest),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let native_hosts = root.join("NativeMessagingHosts");
+        if let Ok(entries) = fs::read_dir(&native_hosts) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                let Ok(text) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                if references(&text, &needles) || references(&name, &needles) {
+                    found.push(Advisory {
+                        kind: AdvisoryKind::BrowserExtension,
+                        summary: format!("{browser} native messaging host {name}"),
+                        detail: text.trim().to_string(),
+                        command: Some(format!("rm \"{}\"", path.display())),
+                        path: Some(path),
+                    });
+                }
+            }
+        }
+    }
+
+    // Firefox profiles keep extension dirs / xpi files by id.
+    let profiles = h("Library/Application Support/Firefox/Profiles");
+    if let Ok(entries) = fs::read_dir(&profiles) {
+        for profile in entries.flatten() {
+            let extensions = profile.path().join("extensions");
+            let Ok(list) = fs::read_dir(&extensions) else {
+                continue;
+            };
+            for extension in list.flatten() {
+                let name = extension.file_name().to_string_lossy().to_string();
+                if references(&name, &needles) {
+                    found.push(Advisory {
+                        kind: AdvisoryKind::BrowserExtension,
+                        summary: format!("Firefox extension {name}"),
+                        detail: format!(
+                            "Extension in profile {}",
+                            profile.file_name().to_string_lossy()
+                        ),
+                        command: Some(format!("rm -rf \"{}\"", extension.path().display())),
+                        path: Some(extension.path()),
+                    });
+                }
+            }
+        }
+    }
+
+    found
+}
+
+fn scan_login_items(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let Some(items) = run_read(
+        "osascript",
+        &[
+            "-e",
+            "tell application \"System Events\" to get the name of every login item",
+        ],
+    ) else {
+        return Vec::new();
+    };
+    if !references(&items, &needles) {
+        return Vec::new();
+    }
+    vec![Advisory {
+        kind: AdvisoryKind::LoginItem,
+        summary: "Registered as a login item".into(),
+        detail: format!("Login items: {}", items.trim()),
+        command: None,
+        path: None,
+    }]
+}
+
+fn scan_scheduled_tasks(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let Some(cron) = run_read("crontab", &["-l"]) else {
+        return Vec::new();
+    };
+    let hits = matching_lines(&cron, &needles);
+    if hits.is_empty() {
+        return Vec::new();
+    }
+    vec![Advisory {
+        kind: AdvisoryKind::ScheduledTask,
+        summary: format!("{} cron entr(y/ies) reference this app", hits.len()),
+        detail: hits.join("\n"),
+        command: Some("crontab -e".into()),
+        path: None,
+    }]
+}
+
+fn scan_extensions(app: &InstalledApp) -> Vec<Advisory> {
+    let needles = app_needles(app);
+    let mut found = Vec::new();
+
+    if let Some(list) = run_read("systemextensionsctl", &["list"]) {
+        for line in matching_lines(&list, &needles) {
+            found.push(Advisory {
+                kind: AdvisoryKind::KernelExtension,
+                summary: "System extension installed".into(),
+                detail: line,
+                command: Some("systemextensionsctl list".into()),
+                path: None,
+            });
+        }
+    }
+
+    if let Some(list) = run_read("kmutil", &["showloaded"]) {
+        for line in matching_lines(&list, &needles) {
+            found.push(Advisory {
+                kind: AdvisoryKind::KernelExtension,
+                summary: "Legacy kernel extension loaded".into(),
+                detail: line,
+                command: Some("kmutil showloaded".into()),
+                path: None,
+            });
+        }
+    }
+
+    found
+}
+
+fn scan_permissions(app: &InstalledApp) -> Vec<Advisory> {
+    let mut found = Vec::new();
+    for path in &app.install_paths {
+        let Ok(target) = path.canonicalize() else {
+            continue;
+        };
+        let Some(output) = run_read("ls", &["-lde", &target.to_string_lossy()]) else {
+            continue;
+        };
+        let acl_lines: Vec<&str> = output
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim_start();
+                match trimmed.split_once(':') {
+                    Some((number, _)) => {
+                        !number.is_empty() && number.chars().all(|c| c.is_ascii_digit())
+                    }
+                    None => false,
+                }
+            })
+            .collect();
+        if !acl_lines.is_empty() {
+            found.push(Advisory {
+                kind: AdvisoryKind::Permission,
+                summary: format!("Custom ACL on {}", target.display()),
+                detail: acl_lines.join("\n"),
+                command: Some(format!("chmod -N \"{}\"", target.display())),
+                path: Some(target),
+            });
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matching_lines_finds_and_numbers_references() {
+        let text = "export PATH=/opt/CoolApp/bin:$PATH\nother=1\n# CoolApp alias\nalias ca=CoolApp\n";
+        let needles = vec!["coolapp".to_string()];
+        let hits = matching_lines(text, &needles);
+        assert_eq!(hits.len(), 3);
+        assert!(hits[0].starts_with("1:"));
+        assert!(hits[2].contains("alias ca=CoolApp"));
+    }
+
+    #[test]
+    fn matching_lines_ignores_unrelated_text() {
+        let needles = vec!["coolapp".to_string()];
+        assert!(matching_lines("nothing here\n", &needles).is_empty());
+    }
 
     #[test]
     fn info_plist_is_read_from_a_real_bundle() {

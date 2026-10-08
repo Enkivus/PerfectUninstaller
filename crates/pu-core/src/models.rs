@@ -111,6 +111,7 @@ pub enum TraceCategory {
     PrivilegedHelper,
     Receipt,
     ShaderCache,
+    CrashReport,
     Registry,
     Service,
     Other,
@@ -133,6 +134,7 @@ impl TraceCategory {
             TraceCategory::PrivilegedHelper => "Privileged helper",
             TraceCategory::Receipt => "Install receipt",
             TraceCategory::ShaderCache => "Shader cache",
+            TraceCategory::CrashReport => "Crash report",
             TraceCategory::Registry => "Registry",
             TraceCategory::Service => "Service",
             TraceCategory::Other => "Other",
@@ -153,11 +155,61 @@ pub struct TraceCandidate {
     pub primary: bool,
 }
 
+/// A change the app left in system configuration that we deliberately do not
+/// edit automatically (firewall rules, shell env vars, browser extensions,
+/// permissions, …). The user is told exactly what was found and, when possible,
+/// given the exact command to undo it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AdvisoryKind {
+    EnvironmentVariable,
+    FirewallRule,
+    BrowserExtension,
+    LoginItem,
+    Permission,
+    LaunchService,
+    KernelExtension,
+    ScheduledTask,
+    Service,
+    Other,
+}
+
+impl AdvisoryKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            AdvisoryKind::EnvironmentVariable => "Environment variable",
+            AdvisoryKind::FirewallRule => "Firewall rule",
+            AdvisoryKind::BrowserExtension => "Browser extension",
+            AdvisoryKind::LoginItem => "Login/startup item",
+            AdvisoryKind::Permission => "Permissions / ACL",
+            AdvisoryKind::LaunchService => "Launch service registration",
+            AdvisoryKind::KernelExtension => "Kernel/system extension",
+            AdvisoryKind::ScheduledTask => "Scheduled task / cron",
+            AdvisoryKind::Service => "Service",
+            AdvisoryKind::Other => "Other",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Advisory {
+    pub kind: AdvisoryKind,
+    /// One-line description of what was found.
+    pub summary: String,
+    /// Longer explanation, including the matched content where useful.
+    pub detail: String,
+    /// Exact command the user can run to undo it, if known.
+    pub command: Option<String>,
+    /// File the finding came from, if any.
+    pub path: Option<PathBuf>,
+}
+
 /// The full picture of everything that would be deleted for one app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemovalPlan {
     pub app: InstalledApp,
     pub candidates: Vec<TraceCandidate>,
+    /// System-config findings that are reported but never auto-deleted.
+    pub advisories: Vec<Advisory>,
     pub total_bytes: u64,
     /// Non-fatal issues worth showing before deletion.
     pub warnings: Vec<String>,
@@ -181,6 +233,8 @@ pub struct RemovalReport {
     pub failed: Vec<RemovalFailure>,
     pub refused: Vec<PathBuf>,
     pub audit_log: Option<PathBuf>,
+    /// Folder holding the exported HTML/JSON/JSONL report, if written.
+    pub report_dir: Option<PathBuf>,
     pub elapsed_ms: u128,
 }
 

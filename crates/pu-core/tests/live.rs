@@ -38,8 +38,54 @@ fn scan_and_analyze_a_real_app() {
         println!("warning: {warning}");
     }
 
+    println!("{} system-config advisories:", plan.advisories.len());
+    for advisory in &plan.advisories {
+        println!(
+            "  [{}] {} — {}",
+            advisory.kind.label(),
+            advisory.summary,
+            advisory.command.as_deref().unwrap_or("(manual)")
+        );
+    }
+
     let default = Engine::default_selection(&plan);
     println!("{} selected by default", default.len());
+
+    // Export a report for the plan and confirm the files exist.
+    let dir = pu_core::report::default_report_dir(&app.name).expect("report dir");
+    let _ = std::fs::remove_dir_all(&dir);
+    let report = pu_core::models::RemovalReport {
+        removed: Vec::new(),
+        bytes_freed: 0,
+        failed: Vec::new(),
+        refused: Vec::new(),
+        audit_log: None,
+        report_dir: None,
+        elapsed_ms: 0,
+    };
+    let exported = pu_core::report::export(&dir, &plan, &report).expect("export");
+    println!("exported report: {}", exported.html.display());
+    assert!(exported.html.exists() && exported.json.exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[ignore = "depends on the host machine's installed software"]
+fn advisories_across_host_apps() {
+    let engine = Engine::new();
+    let apps = engine.scan().expect("scan");
+    let mut total = 0;
+    for app in apps.iter().take(12) {
+        let plan = engine.analyze(app).expect("analyze");
+        if !plan.advisories.is_empty() {
+            println!("{} — {} finding(s)", app.name, plan.advisories.len());
+            for advisory in &plan.advisories {
+                println!("   [{}] {}", advisory.kind.label(), advisory.summary);
+            }
+            total += plan.advisories.len();
+        }
+    }
+    println!("total advisories across sample: {total}");
 }
 
 #[test]

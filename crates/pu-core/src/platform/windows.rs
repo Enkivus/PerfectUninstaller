@@ -177,6 +177,7 @@ impl PlatformBackend for WindowsBackend {
         Ok(RemovalPlan {
             app: app.clone(),
             candidates,
+            advisories: Vec::new(),
             total_bytes,
             warnings,
         })

@@ -75,6 +75,7 @@ impl Engine {
             failed: Vec::new(),
             refused: Vec::new(),
             audit_log: Some(audit_path),
+            report_dir: None,
             elapsed_ms: 0,
         };
 
@@ -144,7 +145,25 @@ impl Engine {
         let _ = audit.flush();
 
         report.elapsed_ms = started.elapsed().as_millis();
+
+        // Best-effort: export the HTML/JSON/JSONL report next to the audit log.
+        if let Ok(dir) = crate::report::default_report_dir(&plan.app.name) {
+            if let Ok(exported) = crate::report::export(&dir, plan, &report) {
+                report.report_dir = Some(exported.dir);
+            }
+        }
+
         Ok(report)
+    }
+
+    /// Re-exports (or exports on demand) the report for a finished run.
+    pub fn export_report(
+        &self,
+        plan: &RemovalPlan,
+        report: &RemovalReport,
+    ) -> Result<crate::report::ExportedReport> {
+        let dir = crate::report::default_report_dir(&plan.app.name)?;
+        crate::report::export(&dir, plan, report)
     }
 }
 
@@ -222,6 +241,7 @@ mod tests {
                 reason: "primary".into(),
                 primary: true,
             }],
+            advisories: vec![],
             total_bytes: 0,
             warnings: vec![],
         }
@@ -266,6 +286,7 @@ mod tests {
                     primary: false,
                 },
             ],
+            advisories: vec![],
             total_bytes: 0,
             warnings: vec![],
         };
