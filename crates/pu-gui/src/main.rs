@@ -4,6 +4,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::thread;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Id, Layout, Margin, RichText, Sense, Stroke, Vec2,
@@ -157,7 +158,7 @@ fn paint_backdrop(ui: &egui::Ui) {
 enum Job {
     Progress { path: String, done: usize, total: usize },
     Scan(Result<Vec<InstalledApp>, String>),
-    Analyze(Result<RemovalPlan, String>),
+    Analyze { app_id: String, generation: u64, result: Result<RemovalPlan, String> },
     Uninstall(Result<RemovalReport, String>),
 }
 
@@ -192,6 +193,8 @@ struct App {
 
     busy: Busy,
     progress: Option<(String, usize, usize)>,
+    analysis_started: Option<Instant>,
+    analysis_generation: u64,
     error: Option<String>,
 
     confirm: ConfirmStage,
@@ -217,6 +220,8 @@ impl App {
             report: None,
             busy: Busy::None,
             progress: None,
+            analysis_started: None,
+            analysis_generation: 0,
             error: None,
             confirm: ConfirmStage::None,
             confirm_ack: false,
@@ -243,8 +248,14 @@ impl App {
                         Err(err) => self.error = Some(format!("Scan failed: {err}")),
                     }
                 }
-                Job::Analyze(result) => {
+                Job::Analyze { app_id, generation, result } => {
+                    if self.selected.as_deref() != Some(app_id.as_str())
+                        || generation != self.analysis_generation
+                    {
+                        continue;
+                    }
                     self.busy = Busy::None;
+                    self.analysis_started = None;
                     match result {
                         Ok(plan) => {
                             self.checked = Engine::default_selection(&plan).into_iter().collect();
@@ -271,6 +282,19 @@ impl App {
                 }
             }
         }
+        if self.busy == Busy::Analyze
+            && self.analysis_started.is_some_and(|started| started.elapsed() > Duration::from_secs(15))
+        {
+            self.busy = Busy::None;
+            self.analysis_started = None;
+            self.analysis_generation = self.analysis_generation.wrapping_add(1);
+            self.selected = None;
+            self.plan = None;
+            self.error = Some(
+                "Analysis exceeded the time limit. You can keep using the app and retry this selection."
+                    .into(),
+            );
+        }
     }
 
     fn spawn_scan(&mut self) {
@@ -281,7 +305,9 @@ impl App {
         self.report = None;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         thread::spawn(move || {
-            let result = Engine::new().scan().map_err(|e| e.to_string());
+            let result = std::panic::catch_unwind(|| Engine::new().scan())
+                .map_err(|_| "the scanner hit an unexpected error".to_string())
+                .and_then(|result| result.map_err(|e| e.to_string()));
             let _ = tx.send(Job::Scan(result));
             ctx.request_repaint();
         });
@@ -292,10 +318,16 @@ impl App {
             return;
         }
         self.busy = Busy::Analyze;
+        self.analysis_started = Some(Instant::now());
+        self.analysis_generation = self.analysis_generation.wrapping_add(1);
+        let generation = self.analysis_generation;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
+        let app_id = app.id.clone();
         thread::spawn(move || {
-            let result = Engine::new().analyze(&app).map_err(|e| e.to_string());
-            let _ = tx.send(Job::Analyze(result));
+            let result = std::panic::catch_unwind(|| Engine::new().analyze(&app))
+                .map_err(|_| "the analyzer hit an unexpected error".to_string())
+                .and_then(|result| result.map_err(|e| e.to_string()));
+            let _ = tx.send(Job::Analyze { app_id, generation, result });
             ctx.request_repaint();
         });
     }
@@ -315,9 +347,9 @@ impl App {
         self.progress = None;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
         thread::spawn(move || {
-            let engine = Engine::new();
-            let result = engine
-                .uninstall(&plan, &selection, &mut |path, done, total| {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let engine = Engine::new();
+                engine.uninstall(&plan, &selection, &mut |path, done, total| {
                     let _ = tx.send(Job::Progress {
                         path: path.display().to_string(),
                         done,
@@ -325,7 +357,9 @@ impl App {
                     });
                     ctx.request_repaint();
                 })
-                .map_err(|e| e.to_string());
+            }))
+            .map_err(|_| "the remover hit an unexpected error".to_string())
+            .and_then(|result| result.map_err(|e| e.to_string()));
             let _ = tx.send(Job::Uninstall(result));
             ctx.request_repaint();
         });
@@ -427,8 +461,8 @@ impl eframe::App for App {
                                 .color(pal().text),
                         );
                         ui.label(
-                            RichText::new("Complete software removal")
-                                .size(11.5)
+                            RichText::new("Find and remove app leftovers")
+                                .size(12.5)
                                 .color(pal().dim),
                         );
                     });
@@ -464,15 +498,6 @@ impl eframe::App for App {
                             DARK_MODE.store(self.dark_mode, Ordering::Relaxed);
                             install_theme(&ctx, self.dark_mode);
                         }
-                        ui.add_space(8.0);
-                        pill(
-                            ui,
-                            if self.apps.is_empty() {
-                                "No apps".to_string()
-                            } else {
-                                format!("{} installed", self.apps.len())
-                            },
-                        );
                     });
                 });
             });
@@ -575,14 +600,12 @@ impl App {
         };
 
         ui.horizontal(|ui| {
-            section_title(ui, "Your software");
+            section_title(ui, "Applications");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 badge(ui, &format!("{count}"), pal().dim, pal().card);
             });
         });
-        ui.add_space(4.0);
-        ui.label(RichText::new("Select an app to inspect its leftovers").size(11.5).color(pal().dim));
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         ui.horizontal(|ui| {
             icon(ui, Icon::Search, pal().dim, 16.0);
             ui.add(
@@ -638,7 +661,7 @@ impl App {
                 for app in &filtered {
                     let selected = self.selected.as_deref() == Some(app.id.as_str());
                     let analyzing = self.busy == Busy::Analyze && selected;
-                    if app_row(ui, app, selected, analyzing).clicked() {
+                    if app_row(ui, app, selected, analyzing).clicked() && self.busy == Busy::None {
                         self.select(app);
                     }
                 }
@@ -798,11 +821,16 @@ impl App {
 
         ui.add_space(14.0);
         ui.horizontal(|ui| {
-            stat_card(ui, "Selected items", &format!("{}", selected.len()), pal().accent);
-            stat_card(ui, "Selected size", &format_bytes(selected_bytes), pal().accent);
-            stat_card(ui, "Total found", &format_bytes(plan.total_bytes), pal().text);
-            stat_card(ui, "Categories", &format!("{}", group_categories(&plan).len()), pal().text);
+            stat_card(ui, "Selected data", &format_bytes(selected_bytes), pal().accent);
+            stat_card(ui, "All matches", &format_bytes(plan.total_bytes), pal().text);
+            stat_card(ui, "Data groups", &format!("{}", group_categories(&plan).len()), pal().text);
         });
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new("Folder sizes are estimated with a time limit. Final freed space is measured after removal.")
+                .size(12.0)
+                .color(pal().dim),
+        );
 
         if !plan.warnings.is_empty() {
             ui.add_space(10.0);
@@ -1641,17 +1669,6 @@ fn paint_icon(ui: &egui::Ui, rect: egui::Rect, glyph: Icon, color: Color32) {
             painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.3, c.y - s * 0.14), egui::pos2(c.x + s * 0.15, c.y + s * 0.38)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
         }
     }
-}
-
-fn pill(ui: &mut egui::Ui, text: String) {
-    egui::Frame::new()
-        .fill(pal().control)
-        .stroke(Stroke::new(1.0, pal().card_stroke))
-        .corner_radius(CornerRadius::same(99))
-        .inner_margin(Margin::symmetric(10, 3))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).size(12.0).color(pal().dim));
-        });
 }
 
 fn section_title(ui: &mut egui::Ui, text: &str) {

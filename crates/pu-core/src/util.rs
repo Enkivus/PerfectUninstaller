@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 /// Total size in bytes of a file/directory tree. Does not follow symlinks
 /// (a symlink contributes only its own length).
@@ -6,6 +7,41 @@ pub fn measure(path: &Path) -> u64 {
     let mut total = 0u64;
     measure_into(path, &mut total);
     total
+}
+
+/// Fast directory-size estimate for interactive analysis. The walk never
+/// follows symlinks and stops after a small time or entry budget so a single
+/// enormous app bundle cannot hold the analysis screen open.
+pub fn estimate_size(path: &Path) -> u64 {
+    const MAX_TIME: Duration = Duration::from_millis(45);
+    let deadline = Instant::now() + MAX_TIME;
+    let mut entries = 0usize;
+    let mut total = 0u64;
+    estimate_into(path, deadline, &mut entries, &mut total);
+    total
+}
+
+fn estimate_into(path: &Path, deadline: Instant, entries: &mut usize, total: &mut u64) {
+    if *entries >= 8_000 || Instant::now() >= deadline {
+        return;
+    }
+    *entries += 1;
+    let Ok(md) = std::fs::symlink_metadata(path) else {
+        return;
+    };
+    if md.is_dir() {
+        let Ok(rd) = std::fs::read_dir(path) else {
+            return;
+        };
+        for entry in rd.flatten() {
+            if *entries >= 8_000 || Instant::now() >= deadline {
+                break;
+            }
+            estimate_into(&entry.path(), deadline, entries, total);
+        }
+    } else {
+        *total = total.saturating_add(md.len());
+    }
 }
 
 fn measure_into(path: &Path, total: &mut u64) {

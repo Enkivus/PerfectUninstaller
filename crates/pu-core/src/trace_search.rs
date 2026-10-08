@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::models::{Confidence, TraceCandidate, TraceCategory};
 use crate::safety::normalize;
-use crate::util::measure;
+use crate::util::estimate_size;
 
 /// One directory the engine searches for residual data.
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ fn scan_dir(
         if let Some((confidence, why)) = match_entry(&name, query) {
             let label = root.label;
             out.push(TraceCandidate {
-                bytes: measure(&path),
+                bytes: estimate_size(&path),
                 path,
                 category: root.category,
                 confidence,

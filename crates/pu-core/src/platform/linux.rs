@@ -8,7 +8,7 @@ use crate::models::{
 use crate::platform::PlatformBackend;
 use crate::safety::ensure_safe;
 use crate::trace_search::{find_traces, Query, SearchRoot};
-use crate::util::measure;
+use crate::util::estimate_size;
 
 pub struct LinuxBackend;
 
@@ -207,7 +207,7 @@ impl PlatformBackend for LinuxBackend {
                 path: p.clone(),
                 category: TraceCategory::Application,
                 confidence: Confidence::High,
-                bytes: measure(p),
+                bytes: estimate_size(p),
                 reason: "primary install location".into(),
                 primary: true,
             })

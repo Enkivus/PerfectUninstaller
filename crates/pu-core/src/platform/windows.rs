@@ -9,7 +9,7 @@ use crate::models::{
 };
 use crate::platform::PlatformBackend;
 use crate::trace_search::{find_traces, Query, SearchRoot};
-use crate::util::measure;
+use crate::util::estimate_size;
 
 pub struct WindowsBackend;
 
@@ -136,7 +136,7 @@ impl PlatformBackend for WindowsBackend {
                 path: p.clone(),
                 category: TraceCategory::Application,
                 confidence: Confidence::High,
-                bytes: measure(p),
+                bytes: estimate_size(p),
                 reason: "primary install location".into(),
                 primary: true,
             })

@@ -1,5 +1,8 @@
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::time::{Duration, Instant};
 
 use crate::error::Result;
 use crate::models::{
@@ -8,7 +11,7 @@ use crate::models::{
 };
 use crate::platform::PlatformBackend;
 use crate::trace_search::{find_traces, Query, SearchRoot};
-use crate::util::measure;
+use crate::util::estimate_size;
 
 pub struct MacosBackend;
 
@@ -335,7 +338,7 @@ impl PlatformBackend for MacosBackend {
                 path: p.clone(),
                 category: TraceCategory::Application,
                 confidence: Confidence::High,
-                bytes: measure(p),
+                bytes: estimate_size(p),
                 reason: "primary install location".into(),
                 primary: true,
             })
@@ -471,11 +474,40 @@ impl PlatformBackend for MacosBackend {
 /// Runs a read-only command, returning stdout on success. Returns `None` when
 /// the binary is missing or the command fails.
 fn run_read(program: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(program).args(args).output().ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).to_string())
+    let mut child = std::process::Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let (output_tx, output_rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if stdout.read_to_end(&mut bytes).is_ok() {
+            let _ = output_tx.send(bytes);
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = output_rx.recv_timeout(Duration::from_millis(100)).ok()?;
+                return status
+                    .success()
+                    .then(|| String::from_utf8_lossy(&output).to_string());
+            }
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
 }
 
 /// Lower-cased strings that identify the app inside config text.
