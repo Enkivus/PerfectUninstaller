@@ -12,6 +12,7 @@ use pu_core::{Confidence, Engine, InstalledApp, RemovalPlan, RemovalReport, Trac
 
 const REPO_URL: &str = "https://github.com/Enkivus/PerfectUninstaller";
 
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Os {
     Mac,
@@ -142,6 +143,88 @@ fn pal() -> &'static Palette {
     PALETTE.get_or_init(|| palette_for(current_os()))
 }
 
+struct Blob {
+    x: f32,
+    y: f32,
+    r: f32,
+    rgb: (f32, f32, f32),
+    strength: f32,
+}
+
+fn backdrop_color(os: Os, fx: f32, fy: f32) -> Color32 {
+    let (base, blobs): ((f32, f32, f32), &[Blob]) = match os {
+        Os::Mac => (
+            (16.0, 18.0, 28.0),
+            &[
+                Blob { x: 0.16, y: 0.10, r: 0.62, rgb: (44.0, 96.0, 255.0), strength: 62.0 },
+                Blob { x: 0.92, y: 0.22, r: 0.60, rgb: (198.0, 70.0, 190.0), strength: 50.0 },
+                Blob { x: 0.72, y: 0.98, r: 0.66, rgb: (28.0, 168.0, 224.0), strength: 46.0 },
+                Blob { x: 0.02, y: 0.92, r: 0.60, rgb: (122.0, 62.0, 236.0), strength: 46.0 },
+            ],
+        ),
+        Os::Windows => (
+            (34.0, 36.0, 42.0),
+            &[
+                Blob { x: 0.14, y: 0.06, r: 0.85, rgb: (56.0, 92.0, 176.0), strength: 26.0 },
+                Blob { x: 0.94, y: 0.86, r: 0.90, rgb: (36.0, 120.0, 150.0), strength: 20.0 },
+                Blob { x: 0.55, y: 0.45, r: 0.95, rgb: (70.0, 70.0, 96.0), strength: 14.0 },
+            ],
+        ),
+        Os::Linux => ((19.0, 21.0, 25.0), &[]),
+    };
+
+    let mut r = base.0;
+    let mut g = base.1;
+    let mut b = base.2;
+    for blob in blobs {
+        let dx = fx - blob.x;
+        let dy = fy - blob.y;
+        let d2 = dx * dx + dy * dy;
+        let w = (-d2 / (2.0 * blob.r * blob.r)).exp() * blob.strength;
+        r += blob.rgb.0 * w / 100.0;
+        g += blob.rgb.1 * w / 100.0;
+        b += blob.rgb.2 * w / 100.0;
+    }
+    let c = |v: f32| v.clamp(0.0, 255.0) as u8;
+    Color32::from_rgb(c(r), c(g), c(b))
+}
+
+fn paint_backdrop(ui: &egui::Ui) {
+    let rect = ui.available_rect_before_wrap();
+    if !rect.is_positive() {
+        return;
+    }
+    let os = current_os();
+    if os == Os::Linux {
+        ui.painter().rect_filled(rect, 0, pal().bg);
+        return;
+    }
+    let cols = 32usize;
+    let rows = 20usize;
+    let mut mesh = egui::Mesh::default();
+    for iy in 0..=rows {
+        for ix in 0..=cols {
+            let fx = ix as f32 / cols as f32;
+            let fy = iy as f32 / rows as f32;
+            let pos = egui::pos2(
+                rect.left() + fx * rect.width(),
+                rect.top() + fy * rect.height(),
+            );
+            mesh.colored_vertex(pos, backdrop_color(os, fx, fy));
+        }
+    }
+    for iy in 0..rows {
+        for ix in 0..cols {
+            let i = (iy * (cols + 1) + ix) as u32;
+            let right = i + 1;
+            let down = i + (cols as u32 + 1);
+            mesh.add_triangle(i, right, down);
+            mesh.add_triangle(right, down + 1, down);
+        }
+    }
+    ui.painter().add(egui::Shape::mesh(mesh));
+}
+
 enum Job {
     Progress { path: String, done: usize, total: usize },
     Scan(Result<Vec<InstalledApp>, String>),
@@ -186,7 +269,6 @@ struct App {
     confirm_ack: bool,
     confirm_name: String,
     show_about: bool,
-    glass_applied: bool,
 }
 
 impl App {
@@ -210,7 +292,6 @@ impl App {
             confirm_ack: false,
             confirm_name: String::new(),
             show_about: false,
-            glass_applied: false,
         };
         install_theme(&app.ctx);
         app.spawn_scan();
@@ -257,46 +338,6 @@ impl App {
                     }
                 }
             }
-        }
-    }
-
-    fn apply_native_material(&mut self, frame: &eframe::Frame) {
-        if self.glass_applied {
-            return;
-        }
-        self.glass_applied = true;
-        let Some(window) = frame.winit_window() else {
-            return;
-        };
-
-        #[cfg(target_os = "macos")]
-        {
-            use window_vibrancy::{
-                apply_liquid_glass, apply_vibrancy, LiquidGlassOptions, NSGlassEffectViewStyle,
-                NSVisualEffectMaterial, NSVisualEffectState,
-            };
-            let glass = LiquidGlassOptions::new(NSGlassEffectViewStyle::Regular);
-            if apply_liquid_glass(window.as_ref(), glass).is_err() {
-                let _ = apply_vibrancy(
-                    window.as_ref(),
-                    NSVisualEffectMaterial::HudWindow,
-                    Some(NSVisualEffectState::Active),
-                    Some(0.0),
-                );
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            use window_vibrancy::{apply_acrylic, apply_mica};
-            if apply_mica(window.as_ref(), Some(true)).is_err() {
-                let _ = apply_acrylic(window.as_ref(), Some((26, 27, 32, 200)));
-            }
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            let _ = window;
         }
     }
 
@@ -403,18 +444,16 @@ impl App {
 
 impl eframe::App for App {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
-        {
-            Color32::TRANSPARENT.to_normalized_gamma_f32()
-        }
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-        {
-            pal().bg.to_normalized_gamma_f32()
+        let p = pal();
+        match current_os() {
+            Os::Mac => [0.055, 0.06, 0.075, 1.0],
+            Os::Windows => [0.125, 0.125, 0.125, 1.0],
+            Os::Linux => p.bg.to_normalized_gamma_f32(),
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        self.apply_native_material(frame);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        paint_backdrop(ui);
         let ctx = ui.ctx().clone();
         self.pump();
 
@@ -1467,8 +1506,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1240.0, 800.0])
-            .with_min_inner_size([960.0, 600.0])
-            .with_transparent(true),
+            .with_min_inner_size([960.0, 600.0]),
         ..Default::default()
     };
     eframe::run_native(
