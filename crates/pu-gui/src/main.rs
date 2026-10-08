@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::thread;
 
@@ -65,10 +66,32 @@ fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
-fn palette_for(_os: Os) -> Palette {
-    // A consistent, calm surface system across platforms: neutral canvas,
-    // white content surfaces, and a restrained evergreen action color.
-    Palette {
+fn palette_for(_os: Os, dark: bool) -> Palette {
+    if dark {
+        Palette {
+            bg: Color32::from_rgb(15, 21, 26),
+            sidebar: Color32::from_rgb(20, 28, 34),
+            header: Color32::from_rgb(20, 28, 34),
+            card: Color32::from_rgb(27, 37, 44),
+            card_stroke: Color32::from_rgb(48, 62, 70),
+            control: Color32::from_rgb(34, 46, 53),
+            control_hover: Color32::from_rgb(44, 60, 67),
+            control_active: Color32::from_rgb(39, 70, 65),
+            text: Color32::from_rgb(241, 246, 247),
+            dim: Color32::from_rgb(170, 186, 192),
+            accent: Color32::from_rgb(108, 220, 195),
+            accent_fill: Color32::from_rgb(25, 133, 112),
+            accent_soft: Color32::from_rgb(34, 67, 61),
+            danger: Color32::from_rgb(255, 135, 125),
+            danger_fill: Color32::from_rgb(164, 57, 53),
+            ok: Color32::from_rgb(111, 221, 168),
+            warn: Color32::from_rgb(243, 195, 106),
+            border: Color32::from_rgb(48, 62, 70),
+            window_fill: Color32::from_rgb(25, 34, 40),
+            radius: 12,
+        }
+    } else {
+        Palette {
         bg: Color32::from_rgb(243, 246, 248),
         sidebar: Color32::from_rgb(237, 241, 244),
         header: Color32::from_rgb(250, 252, 253),
@@ -89,12 +112,39 @@ fn palette_for(_os: Os) -> Palette {
         border: Color32::from_rgb(215, 224, 227),
         window_fill: Color32::WHITE,
         radius: 12,
+        }
     }
 }
 
+static DARK_MODE: AtomicBool = AtomicBool::new(true);
+
 fn pal() -> &'static Palette {
-    static PALETTE: OnceLock<Palette> = OnceLock::new();
-    PALETTE.get_or_init(|| palette_for(current_os()))
+    static DARK: OnceLock<Palette> = OnceLock::new();
+    static LIGHT: OnceLock<Palette> = OnceLock::new();
+    if DARK_MODE.load(Ordering::Relaxed) {
+        DARK.get_or_init(|| palette_for(current_os(), true))
+    } else {
+        LIGHT.get_or_init(|| palette_for(current_os(), false))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Icon {
+    Shield,
+    Search,
+    Sun,
+    Moon,
+    Refresh,
+    Info,
+    Alert,
+    Box,
+    Check,
+    Back,
+    App,
+    Trash,
+    Folder,
+    Copy,
+    Success,
 }
 
 fn paint_backdrop(ui: &egui::Ui) {
@@ -148,6 +198,7 @@ struct App {
     confirm_ack: bool,
     confirm_name: String,
     show_about: bool,
+    dark_mode: bool,
 }
 
 impl App {
@@ -171,8 +222,10 @@ impl App {
             confirm_ack: false,
             confirm_name: String::new(),
             show_about: false,
+            dark_mode: true,
         };
-        install_theme(&app.ctx);
+        DARK_MODE.store(true, Ordering::Relaxed);
+        install_theme(&app.ctx, true);
         app.spawn_scan();
         app
     }
@@ -387,18 +440,31 @@ impl eframe::App for App {
                             ui.spinner();
                             ui.add_space(4.0);
                         }
-                        let scan = ui.add_enabled(
+                        let scan = primary_icon_text_button(
+                            ui,
+                            "Scan for software",
+                            Icon::Refresh,
                             self.busy == Busy::None,
-                            primary_button("Scan for software"),
                         );
                         if scan.clicked() {
                             self.spawn_scan();
                         }
                         ui.add_space(2.0);
-                        if ui.add(ghost_button("About")).clicked() {
+                        if icon_text_button(ui, "About", Icon::Info).clicked() {
                             self.show_about = true;
                         }
                         ui.add_space(6.0);
+                        let (mode_label, mode_icon) = if self.dark_mode {
+                            ("Light mode", Icon::Sun)
+                        } else {
+                            ("Dark mode", Icon::Moon)
+                        };
+                        if icon_text_button(ui, mode_label, mode_icon).clicked() {
+                            self.dark_mode = !self.dark_mode;
+                            DARK_MODE.store(self.dark_mode, Ordering::Relaxed);
+                            install_theme(&ctx, self.dark_mode);
+                        }
+                        ui.add_space(8.0);
                         pill(
                             ui,
                             if self.apps.is_empty() {
@@ -420,7 +486,7 @@ impl eframe::App for App {
                 )
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("⚠").color(pal().danger).strong());
+                        icon(ui, Icon::Alert, pal().danger, 16.0);
                         ui.colored_label(pal().danger, &error);
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.small_button("Dismiss").clicked() {
@@ -517,11 +583,14 @@ impl App {
         ui.add_space(4.0);
         ui.label(RichText::new("Select an app to inspect its leftovers").size(11.5).color(pal().dim));
         ui.add_space(10.0);
-        ui.add(
-            egui::TextEdit::singleline(&mut self.filter)
-                .hint_text("Search by name or identifier…")
-                .desired_width(f32::INFINITY),
-        );
+        ui.horizontal(|ui| {
+            icon(ui, Icon::Search, pal().dim, 16.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.filter)
+                    .hint_text("Search applications")
+                    .desired_width(f32::INFINITY),
+            );
+        });
         ui.add_space(12.0);
 
         ui.separator();
@@ -540,7 +609,7 @@ impl App {
         if self.apps.is_empty() {
             ui.add_space(24.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("◌").color(pal().dim).size(30.0));
+                icon(ui, Icon::Box, pal().dim, 28.0);
                 ui.add_space(6.0);
                 ui.label(RichText::new("No software found").color(pal().dim));
             });
@@ -578,7 +647,7 @@ impl App {
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("●").size(9.0).color(pal().ok));
+                icon(ui, Icon::Shield, pal().ok, 14.0);
                 ui.label(RichText::new("Review every item before removal").size(10.5).color(pal().dim));
             });
         });
@@ -587,56 +656,56 @@ impl App {
     fn welcome_view(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-            let mut start = false;
             ui.vertical_centered(|ui| {
-                ui.add_space((rect.height() * 0.18).min(140.0));
+                ui.add_space((rect.height() * 0.11).min(80.0));
                 glass_card(ui, |ui| {
-                    ui.set_max_width(520.0);
+                    ui.set_max_width(700.0);
                     ui.vertical_centered(|ui| {
-                        ui.add_space(18.0);
-                        brand_mark(ui);
-                        ui.add_space(16.0);
+                        ui.add_space(26.0);
+                        let (mark, _) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::hover());
+                        ui.painter().circle_filled(mark.center(), 32.0, pal().accent_soft);
+                        paint_icon(ui, mark.shrink(17.0), Icon::Shield, pal().accent);
+                        ui.add_space(20.0);
                         ui.label(
-                            RichText::new("Nothing selected")
-                                .size(24.0)
+                            RichText::new("A clean uninstall, made clear.")
+                                .size(28.0)
                                 .strong()
                                 .color(pal().text),
                         );
-                        ui.add_space(8.0);
+                        ui.add_space(10.0);
                         ui.add(
                             egui::Label::new(
                                 RichText::new(
-                                    "Choose an application on the left to discover everything it \
-                                     left behind — caches, preferences, containers, launch \
-                                     agents, receipts and crash reports — then decide exactly \
-                                     what to remove.",
+                                    "See the files an app leaves behind. Review every match, choose what to keep, and remove only the items you approve.",
                                 )
                                 .color(pal().dim),
                             )
                             .wrap(),
                         );
-                        ui.add_space(20.0);
+                        ui.add_space(22.0);
+                        if ui.add_enabled(self.busy == Busy::None, primary_button("Scan for applications")).clicked() {
+                            self.spawn_scan();
+                        }
+                        ui.add_space(26.0);
+                        ui.horizontal_wrapped(|ui| {
+                            feature_tile(ui, Icon::Search, "Find leftovers", "Caches, settings and support files");
+                            feature_tile(ui, Icon::Check, "Review first", "Choose exactly what gets removed");
+                            feature_tile(ui, Icon::Shield, "Stay in control", "Protected locations stay untouched");
+                        });
+                        ui.add_space(18.0);
                         if self.apps.is_empty() {
-                            if ui
-                                .add(primary_button("Scan for installed software"))
-                                .clicked()
-                            {
-                                start = true;
-                            }
+                            ui.label(RichText::new("Scanning happens locally on this device.").size(12.5).color(pal().dim));
                         } else {
                             ui.label(
-                                RichText::new("Tip: press ⌘R to rescan, or pick an app from the list.")
-                                    .size(12.0)
+                                RichText::new("Choose an application from the list to begin.")
+                                    .size(12.5)
                                     .color(pal().dim),
                             );
                         }
-                        ui.add_space(20.0);
+                        ui.add_space(14.0);
                     });
                 });
             });
-            if start {
-                self.spawn_scan();
-            }
         });
     }
 
@@ -696,7 +765,7 @@ impl App {
         };
 
         ui.horizontal(|ui| {
-            if ui.add(ghost_button("← Back")).clicked() {
+            if icon_text_button(ui, "Applications", Icon::Back).clicked() {
                 self.plan = None;
                 self.checked.clear();
                 self.selected = None;
@@ -718,7 +787,7 @@ impl App {
                 });
                 if let Some(id) = &plan.app.identifier {
                     if id != &plan.app.name {
-                        ui.label(RichText::new(id).monospace().size(11.0).color(pal().dim));
+                        ui.label(RichText::new(id).monospace().size(12.5).color(pal().dim));
                     }
                 }
             });
@@ -794,24 +863,12 @@ impl App {
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let enabled = !selected.is_empty() && self.busy == Busy::None;
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::Button::new(
-                            RichText::new(format!(
-                                "Uninstall  ·  {}",
-                                format_bytes(selected_bytes)
-                            ))
-                            .color(primary_text())
-                            .strong(),
-                        )
-                        .fill(pal().danger_fill)
-                        .stroke(Stroke::new(1.0, pal().danger))
-                        .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
-                        .min_size(Vec2::new(220.0, 40.0)),
-                    )
-                    .clicked()
-                {
+                if danger_icon_text_button(
+                    ui,
+                    &format!("Uninstall  ·  {}", format_bytes(selected_bytes)),
+                    Icon::Trash,
+                    enabled,
+                ).clicked() {
                     self.confirm = ConfirmStage::Review;
                     self.confirm_ack = false;
                     self.confirm_name.clear();
@@ -928,7 +985,7 @@ impl App {
     }
 
     fn report_view(&mut self, ui: &mut egui::Ui, report: &RemovalReport) {
-        if ui.add(ghost_button("← Back to app list")).clicked() {
+        if icon_text_button(ui, "Back to applications", Icon::Back).clicked() {
             self.report = None;
             return;
         }
@@ -939,13 +996,7 @@ impl App {
                 .circle_filled(rect.center(), 22.0, rgba(48, 209, 88, 60));
             ui.painter()
                 .circle_stroke(rect.center(), 22.0, Stroke::new(1.5, pal().ok));
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "✓",
-                egui::FontId::proportional(22.0),
-                pal().ok,
-            );
+            paint_icon(ui, rect.shrink(12.0), Icon::Success, pal().ok);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.label(
@@ -1033,7 +1084,7 @@ impl App {
                             ui.label(
                                 RichText::new(shorten(&audit.display().to_string(), 70))
                                     .monospace()
-                                    .size(11.0)
+                                    .size(12.0)
                                     .color(pal().dim),
                             );
                             if ui.add(ghost_button("Open")).clicked() {
@@ -1051,19 +1102,19 @@ impl App {
                             ui.label(
                                 RichText::new(shorten(&dir.display().to_string(), 60))
                                     .monospace()
-                                    .size(11.0)
+                                    .size(12.0)
                                     .color(pal().dim),
                             );
                         });
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if ui.add(ghost_button("Open folder")).clicked() {
+                            if icon_text_button(ui, "Open folder", Icon::Folder).clicked() {
                                 let _ = open_path(dir);
                             }
                             if ui.add(primary_button("Open HTML report")).clicked() {
                                 let _ = open_path(&dir.join("report.html"));
                             }
-                            if ui.add(ghost_button("Copy path")).clicked() {
+                            if icon_text_button(ui, "Copy path", Icon::Copy).clicked() {
                                 ui.ctx().copy_text(dir.display().to_string());
                             }
                         });
@@ -1179,7 +1230,7 @@ impl App {
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui
-                        .add(primary_button("Continue  →"))
+                        .add(primary_button("Continue"))
                         .clicked()
                     {
                         advance = true;
@@ -1258,7 +1309,7 @@ impl App {
                 if ui.add(ghost_button("Cancel")).clicked() {
                     cancel = true;
                 }
-                if ui.add(ghost_button("← Back")).clicked() {
+                if icon_text_button(ui, "Back", Icon::Back).clicked() {
                     back = true;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1292,7 +1343,7 @@ impl App {
         let resp = egui::Modal::new(Id::new("about_modal")).show(ctx, |ui| {
             ui.set_min_width(430.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("◆").color(pal().accent).size(30.0));
+                icon(ui, Icon::Shield, pal().accent, 30.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new("PerfectUninstaller").size(21.0).strong());
                     ui.label(
@@ -1338,14 +1389,14 @@ impl App {
     }
 }
 
-fn install_theme(ctx: &egui::Context) {
-    ctx.set_theme(egui::Theme::Light);
+fn install_theme(ctx: &egui::Context, dark: bool) {
+    ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
     let p = pal();
 
-    let mut visuals = egui::Visuals::light();
+    let mut visuals = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
     visuals.panel_fill = Color32::TRANSPARENT;
     visuals.window_fill = p.window_fill;
-    visuals.extreme_bg_color = Color32::from_rgb(245, 248, 249);
+    visuals.extreme_bg_color = p.bg;
     visuals.faint_bg_color = p.card;
     visuals.code_bg_color = rgba(255, 255, 255, 10);
     visuals.hyperlink_color = p.accent;
@@ -1357,7 +1408,7 @@ fn install_theme(ctx: &egui::Context) {
         offset: [0, 10],
         blur: 28,
         spread: 0,
-        color: rgba(27, 40, 47, 28),
+        color: if dark { rgba(0, 0, 0, 110) } else { rgba(27, 40, 47, 28) },
     };
 
     let r = CornerRadius::same(p.radius);
@@ -1393,14 +1444,15 @@ fn install_theme(ctx: &egui::Context) {
 
     ctx.all_styles_mut(|style| {
         style.visuals = visuals.clone();
-        style.spacing.item_spacing = Vec2::new(10.0, 10.0);
-        style.spacing.button_padding = Vec2::new(14.0, 9.0);
-        style.spacing.window_margin = Margin::same(20);
+        style.override_font_id = Some(egui::FontId::proportional(15.0));
+        style.spacing.item_spacing = Vec2::new(12.0, 12.0);
+        style.spacing.button_padding = Vec2::new(15.0, 10.0);
+        style.spacing.window_margin = Margin::same(22);
         style.spacing.indent = 20.0;
-        style.spacing.interact_size.y = 30.0;
-        style.spacing.scroll.bar_width = 8.0;
-        style.spacing.scroll.floating_width = 6.0;
-        style.spacing.scroll.handle_min_length = 32.0;
+        style.spacing.interact_size.y = 36.0;
+        style.spacing.scroll.bar_width = 10.0;
+        style.spacing.scroll.floating_width = 8.0;
+        style.spacing.scroll.handle_min_length = 38.0;
     });
 }
 
@@ -1408,48 +1460,36 @@ fn primary_text() -> Color32 {
     Color32::WHITE
 }
 
-fn primary_button(text: &'static str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text).color(primary_text()).strong())
+fn primary_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
         .fill(pal().accent_fill)
         .stroke(Stroke::new(1.0, pal().accent))
         .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
         .min_size(Vec2::new(0.0, 34.0))
 }
 
-fn danger_button(text: &'static str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text).color(primary_text()).strong())
+fn danger_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
         .fill(pal().danger_fill)
         .stroke(Stroke::new(1.0, pal().danger))
         .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
         .min_size(Vec2::new(0.0, 34.0))
 }
 
-fn ghost_button(text: &'static str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text).color(pal().text))
+fn ghost_button(text: impl Into<String>) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(text.into()).color(pal().text))
         .fill(pal().control)
         .stroke(Stroke::new(1.0, pal().card_stroke))
         .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
         .min_size(Vec2::new(0.0, 34.0))
 }
 
-fn monogram(name: &str) -> String {
-    name.chars()
-        .find(|c| c.is_alphanumeric())
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string())
-}
-
 fn avatar(ui: &mut egui::Ui, name: &str, size: f32, bg: Color32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
     let radius = CornerRadius::same((size / 3.5) as u8);
     ui.painter().rect_filled(rect, radius, bg);
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        monogram(name),
-        egui::FontId::proportional(size * 0.46),
-        primary_text(),
-    );
+    let _ = name;
+    paint_icon(ui, rect.shrink(size * 0.23), Icon::App, primary_text());
 }
 
 fn brand_mark(ui: &mut egui::Ui) {
@@ -1463,13 +1503,144 @@ fn brand_mark(ui: &mut egui::Ui) {
         Stroke::new(1.0, pal().accent),
         egui::StrokeKind::Inside,
     );
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        "◆",
-        egui::FontId::proportional(15.0),
-        Color32::from_rgb(255, 255, 255),
-    );
+    paint_icon(ui, rect.shrink(8.0), Icon::Shield, Color32::WHITE);
+}
+
+fn icon_text_button(ui: &mut egui::Ui, text: &str, glyph: Icon) -> egui::Response {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 34.0), Sense::hover());
+        paint_icon(ui, rect.shrink(2.0), glyph, pal().text);
+        ui.add(ghost_button(text))
+    }).inner
+}
+
+fn primary_icon_text_button(
+    ui: &mut egui::Ui,
+    text: &str,
+    glyph: Icon,
+    enabled: bool,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 34.0), Sense::hover());
+        paint_icon(ui, rect.shrink(2.0), glyph, Color32::WHITE);
+        ui.add_enabled(enabled, primary_button(text))
+    })
+    .inner
+}
+
+fn danger_icon_text_button(
+    ui: &mut egui::Ui,
+    text: &str,
+    glyph: Icon,
+    enabled: bool,
+) -> egui::Response {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 38.0), Sense::hover());
+        paint_icon(ui, rect.shrink(2.0), glyph, Color32::WHITE);
+        ui.add_enabled(
+            enabled,
+            egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
+                .fill(pal().danger_fill)
+                .stroke(Stroke::new(1.0, pal().danger))
+                .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
+                .min_size(Vec2::new(220.0, 40.0)),
+        )
+    })
+    .inner
+}
+
+fn icon(ui: &mut egui::Ui, glyph: Icon, color: Color32, size: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    paint_icon(ui, rect.shrink(size * 0.15), glyph, color);
+}
+
+fn paint_icon(ui: &egui::Ui, rect: egui::Rect, glyph: Icon, color: Color32) {
+    let painter = ui.painter();
+    let c = rect.center();
+    let s = rect.width().min(rect.height());
+    let line = (s * 0.095).max(1.4);
+    let stroke = Stroke::new(line, color);
+    let seg = |a: egui::Pos2, b: egui::Pos2| painter.line_segment([a, b], stroke);
+    match glyph {
+        Icon::Shield | Icon::Success => {
+            let points = vec![
+                egui::pos2(c.x, rect.top()),
+                egui::pos2(rect.right(), rect.top() + s * 0.18),
+                egui::pos2(rect.right() - s * 0.04, c.y + s * 0.12),
+                egui::pos2(c.x, rect.bottom()),
+                egui::pos2(rect.left() + s * 0.04, c.y + s * 0.12),
+                egui::pos2(rect.left(), rect.top() + s * 0.18),
+            ];
+            painter.add(egui::Shape::closed_line(points, stroke));
+            seg(egui::pos2(c.x - s * 0.2, c.y), egui::pos2(c.x - s * 0.04, c.y + s * 0.16));
+            seg(egui::pos2(c.x - s * 0.04, c.y + s * 0.16), egui::pos2(c.x + s * 0.23, c.y - s * 0.16));
+        }
+        Icon::Search => {
+            painter.circle_stroke(egui::pos2(c.x - s * 0.08, c.y - s * 0.08), s * 0.28, stroke);
+            seg(egui::pos2(c.x + s * 0.12, c.y + s * 0.12), egui::pos2(c.x + s * 0.34, c.y + s * 0.34));
+        }
+        Icon::Sun => {
+            painter.circle_stroke(c, s * 0.2, stroke);
+            for i in 0..8 {
+                let a = std::f32::consts::TAU * i as f32 / 8.0;
+                let unit = egui::vec2(a.cos(), a.sin());
+                seg(c + unit * s * 0.31, c + unit * s * 0.43);
+            }
+        }
+        Icon::Moon => {
+            painter.circle_filled(c, s * 0.36, color);
+            painter.circle_filled(egui::pos2(c.x + s * 0.16, c.y - s * 0.15), s * 0.31, pal().control);
+        }
+        Icon::Refresh => {
+            painter.circle_stroke(c, s * 0.32, stroke);
+            seg(egui::pos2(c.x + s * 0.18, c.y - s * 0.28), egui::pos2(c.x + s * 0.36, c.y - s * 0.28));
+            seg(egui::pos2(c.x + s * 0.36, c.y - s * 0.28), egui::pos2(c.x + s * 0.36, c.y - s * 0.1));
+        }
+        Icon::Info => {
+            painter.circle_stroke(c, s * 0.4, stroke);
+            painter.circle_filled(egui::pos2(c.x, c.y - s * 0.18), line * 0.8, color);
+            seg(egui::pos2(c.x, c.y - s * 0.02), egui::pos2(c.x, c.y + s * 0.23));
+        }
+        Icon::Alert => {
+            painter.add(egui::Shape::closed_line(vec![egui::pos2(c.x, rect.top()), egui::pos2(rect.right(), rect.bottom()), egui::pos2(rect.left(), rect.bottom())], stroke));
+            seg(egui::pos2(c.x, c.y - s * 0.16), egui::pos2(c.x, c.y + s * 0.1));
+            painter.circle_filled(egui::pos2(c.x, c.y + s * 0.25), line * 0.7, color);
+        }
+        Icon::Box | Icon::App => {
+            painter.rect_stroke(rect.shrink(s * 0.06), CornerRadius::same((s * 0.12) as u8), stroke, egui::StrokeKind::Inside);
+            seg(egui::pos2(rect.left() + s * 0.06, rect.top() + s * 0.25), egui::pos2(rect.right() - s * 0.06, rect.top() + s * 0.25));
+            if matches!(glyph, Icon::App) {
+                for i in 0..3 { painter.circle_filled(egui::pos2(rect.left() + s * (0.17 + i as f32 * 0.13), rect.top() + s * 0.14), line * 0.65, color); }
+                seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.43), egui::pos2(rect.right() - s * 0.2, rect.top() + s * 0.43));
+                seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.59), egui::pos2(rect.right() - s * 0.32, rect.top() + s * 0.59));
+            } else {
+                seg(egui::pos2(c.x, rect.top() + s * 0.25), egui::pos2(c.x, rect.bottom() - s * 0.08));
+            }
+        }
+        Icon::Check => {
+            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(c.x - s * 0.06, c.y + s * 0.19));
+            seg(egui::pos2(c.x - s * 0.06, c.y + s * 0.19), egui::pos2(rect.right() - s * 0.1, rect.top() + s * 0.18));
+        }
+        Icon::Back => {
+            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.right() - s * 0.05, c.y));
+            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.left() + s * 0.38, c.y - s * 0.25));
+            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.left() + s * 0.38, c.y + s * 0.25));
+        }
+        Icon::Trash => {
+            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.25, c.y - s * 0.16), egui::pos2(c.x + s * 0.25, c.y + s * 0.36)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
+            seg(egui::pos2(c.x - s * 0.34, c.y - s * 0.24), egui::pos2(c.x + s * 0.34, c.y - s * 0.24));
+            seg(egui::pos2(c.x - s * 0.12, c.y - s * 0.36), egui::pos2(c.x + s * 0.12, c.y - s * 0.36));
+        }
+        Icon::Folder => {
+            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16), egui::pos2(rect.right() - s * 0.05, rect.bottom() - s * 0.05)), CornerRadius::same(3), stroke, egui::StrokeKind::Inside);
+            seg(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16), egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32));
+            seg(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32), egui::pos2(c.x - s * 0.05, c.y - s * 0.32));
+        }
+        Icon::Copy => {
+            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.17, c.y - s * 0.3), egui::pos2(c.x + s * 0.28, c.y + s * 0.23)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
+            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.3, c.y - s * 0.14), egui::pos2(c.x + s * 0.15, c.y + s * 0.38)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
+        }
+    }
 }
 
 fn pill(ui: &mut egui::Ui, text: String) {
@@ -1486,7 +1657,7 @@ fn pill(ui: &mut egui::Ui, text: String) {
 fn section_title(ui: &mut egui::Ui, text: &str) {
     ui.label(
         RichText::new(text.to_uppercase())
-            .size(11.0)
+            .size(12.0)
             .strong()
             .color(pal().dim),
     );
@@ -1556,7 +1727,7 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
                             ui.spacing_mut().item_spacing.x = 6.0;
                             ui.label(
                                 RichText::new(&app.name)
-                                    .size(13.5)
+                                .size(15.0)
                                     .strong()
                                     .color(pal().text),
                             );
@@ -1569,7 +1740,7 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
                             meta.push(version.clone());
                         }
                         meta.push(app.method.label().to_string());
-                        ui.label(RichText::new(meta.join(" · ")).size(11.0).color(pal().dim));
+                        ui.label(RichText::new(meta.join(" · ")).size(12.5).color(pal().dim));
                     });
                 });
             },
@@ -1636,12 +1807,13 @@ fn candidate_row(
             }
         }
         let (text, color) = confidence_style(candidate.confidence);
-        let dot = match candidate.confidence {
-            Confidence::High => "●",
-            Confidence::Medium => "◐",
-            Confidence::Low => "○",
+        let confidence_icon = match candidate.confidence {
+            Confidence::High => Icon::Success,
+            Confidence::Medium => Icon::Alert,
+            Confidence::Low => Icon::Info,
         };
-        ui.label(RichText::new(format!("{dot} {text}")).color(color).size(11.5));
+        icon(ui, confidence_icon, color, 14.0);
+        ui.label(RichText::new(text).color(color).size(12.5));
         let path = candidate.path.display().to_string();
         let available = ui.available_width();
         let max = ((available / 7.0) as usize).saturating_sub(12);
@@ -1689,6 +1861,25 @@ fn stat_card(ui: &mut egui::Ui, title: &str, value: &str, accent: Color32) {
         });
 }
 
+fn feature_tile(ui: &mut egui::Ui, glyph: Icon, title: &str, detail: &str) {
+    egui::Frame::new()
+        .fill(pal().control)
+        .stroke(Stroke::new(1.0, pal().card_stroke))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::symmetric(12, 10))
+        .show(ui, |ui| {
+            ui.set_min_width(170.0);
+            ui.horizontal(|ui| {
+                icon(ui, glyph, pal().accent, 19.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label(RichText::new(title).strong().size(13.0).color(pal().text));
+                    ui.label(RichText::new(detail).size(11.5).color(pal().dim));
+                });
+            });
+        });
+}
+
 fn warning_row(ui: &mut egui::Ui, text: &str) {
     egui::Frame::new()
         .fill(rgba(150, 110, 20, 46))
@@ -1698,7 +1889,7 @@ fn warning_row(ui: &mut egui::Ui, text: &str) {
         .show(ui, |ui| {
             ui.set_max_width(f32::INFINITY);
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new("⚠").color(pal().warn).size(14.0));
+                icon(ui, Icon::Alert, pal().warn, 16.0);
                 ui.label(RichText::new(text).color(pal().warn).size(12.5));
             });
         });
@@ -1706,9 +1897,9 @@ fn warning_row(ui: &mut egui::Ui, text: &str) {
 
 fn confidence_style(confidence: Confidence) -> (&'static str, Color32) {
     match confidence {
-        Confidence::High => ("● high", pal().ok),
-        Confidence::Medium => ("● medium", pal().warn),
-        Confidence::Low => ("● low", pal().dim),
+        Confidence::High => ("High", pal().ok),
+        Confidence::Medium => ("Medium", pal().warn),
+        Confidence::Low => ("Low", pal().dim),
     }
 }
 
