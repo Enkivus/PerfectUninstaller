@@ -138,7 +138,6 @@ enum Icon {
     Refresh,
     Info,
     Alert,
-    Box,
     Check,
     Back,
     App,
@@ -146,6 +145,13 @@ enum Icon {
     Folder,
     Copy,
     Success,
+}
+
+#[derive(Clone, Copy)]
+enum ActionButtonStyle {
+    Primary,
+    Ghost,
+    Danger,
 }
 
 fn paint_backdrop(ui: &egui::Ui) {
@@ -406,6 +412,18 @@ impl App {
             self.checked.extend(plan.candidates.iter().map(|c| c.path.clone()));
         }
     }
+
+    fn cancel_analysis(&mut self) {
+        if self.busy != Busy::Analyze {
+            return;
+        }
+        self.busy = Busy::None;
+        self.analysis_started = None;
+        self.analysis_generation = self.analysis_generation.wrapping_add(1);
+        self.selected = None;
+        self.plan = None;
+        self.checked.clear();
+    }
 }
 
 impl App {
@@ -422,7 +440,9 @@ impl App {
         if rescan {
             self.spawn_scan();
         } else if escape {
-            if self.report.is_some() {
+            if self.busy == Busy::Analyze {
+                self.cancel_analysis();
+            } else if self.report.is_some() {
                 self.report = None;
             } else if self.plan.is_some() {
                 self.plan = None;
@@ -443,70 +463,12 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.pump();
 
-        egui::Panel::top("header")
-            .frame(
-                egui::Frame::new()
-                    .fill(pal().header)
-                    .inner_margin(Margin::symmetric(20, 12)),
-            )
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    brand_mark(ui);
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        ui.label(
-                            RichText::new("PerfectUninstaller")
-                                .size(20.0)
-                                .strong()
-                                .color(pal().text),
-                        );
-                        ui.label(
-                            RichText::new("Find and remove app leftovers")
-                                .size(12.5)
-                                .color(pal().dim),
-                        );
-                    });
-                    ui.add_space(12.0);
-                    badge(ui, self.platform, pal().accent, pal().accent_soft);
-
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if self.busy == Busy::Scan {
-                            ui.spinner();
-                            ui.add_space(4.0);
-                        }
-                        let scan = primary_icon_text_button(
-                            ui,
-                            "Scan for software",
-                            Icon::Refresh,
-                            self.busy == Busy::None,
-                        );
-                        if scan.clicked() {
-                            self.spawn_scan();
-                        }
-                        ui.add_space(2.0);
-                        if icon_text_button(ui, "About", Icon::Info).clicked() {
-                            self.show_about = true;
-                        }
-                        ui.add_space(6.0);
-                        let (mode_label, mode_icon) = if self.dark_mode {
-                            ("Light mode", Icon::Sun)
-                        } else {
-                            ("Dark mode", Icon::Moon)
-                        };
-                        if icon_text_button(ui, mode_label, mode_icon).clicked() {
-                            self.dark_mode = !self.dark_mode;
-                            DARK_MODE.store(self.dark_mode, Ordering::Relaxed);
-                            install_theme(&ctx, self.dark_mode);
-                        }
-                    });
-                });
-            });
-
         if let Some(error) = self.error.clone() {
             egui::Panel::top("error")
                 .frame(
                     egui::Frame::new()
-                        .fill(rgba(120, 30, 34, 150))
+                        .fill(pal().card)
+                        .stroke(Stroke::new(1.0, pal().danger))
                         .inner_margin(Margin::symmetric(18, 8)),
                 )
                 .show(ui, |ui| {
@@ -522,35 +484,11 @@ impl eframe::App for App {
                 });
         }
 
-        if let Some((path, done, total)) = self.progress.clone() {
-            egui::Panel::bottom("progress")
-                .frame(
-                    egui::Frame::new()
-                        .fill(pal().header)
-                        .inner_margin(Margin::symmetric(18, 12)),
-                )
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::ProgressBar::new(done as f32 / total.max(1) as f32)
-                            .fill(pal().accent)
-                            .corner_radius(pal().radius)
-                            .desired_width(f32::INFINITY),
-                    );
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(format!("Deleting {done}/{total}…"))
-                            .small()
-                            .color(pal().dim),
-                    );
-                    ui.label(RichText::new(shorten(&path, 120)).monospace().small().weak());
-                });
-        }
-
         egui::Panel::left("apps")
             .resizable(true)
-            .default_size(320.0)
-            .min_size(280.0)
-            .max_size(440.0)
+            .default_size(292.0)
+            .min_size(252.0)
+            .max_size(360.0)
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
@@ -558,6 +496,45 @@ impl eframe::App for App {
                     .inner_margin(Margin::symmetric(14, 16)),
             )
             .show(ui, |ui| self.sidebar(ui));
+
+        if let Some((path, done, total)) = self.progress.clone() {
+            egui::Panel::bottom("progress")
+                .frame(egui::Frame::new().fill(pal().header).inner_margin(Margin::symmetric(22, 10)))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(format!("Removing items · {done} of {total}")).strong().color(pal().text));
+                            ui.label(RichText::new(shorten(&path, 110)).monospace().size(12.0).color(pal().dim));
+                        });
+                    });
+                    ui.add_space(6.0);
+                    ui.add(egui::ProgressBar::new(done as f32 / total.max(1) as f32).fill(pal().accent).corner_radius(pal().radius).desired_width(f32::INFINITY));
+                });
+        } else if self.plan.is_some() && self.busy == Busy::None && self.confirm == ConfirmStage::None {
+            let plan = self.plan.as_ref().expect("plan checked above");
+            let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
+            let selected_bytes = plan.selected_bytes(&selected);
+            egui::Panel::bottom("review_action")
+                .frame(egui::Frame::new().fill(pal().header).stroke(Stroke::new(1.0, pal().border)).inner_margin(Margin::symmetric(22, 12)))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        icon(ui, Icon::Shield, pal().accent, 22.0);
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(RichText::new(format!("{} locations selected", selected.len())).strong().color(pal().text));
+                            ui.label(RichText::new(format!("About {} · you’ll review every path next", format_bytes(selected_bytes))).size(12.5).color(pal().dim));
+                        });
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if danger_icon_text_button(ui, "Review uninstall", Icon::Trash, !selected.is_empty()).clicked() {
+                                self.confirm = ConfirmStage::Review;
+                                self.confirm_ack = false;
+                                self.confirm_name.clear();
+                            }
+                        });
+                    });
+                });
+        }
 
         egui::CentralPanel::default()
             .frame(
@@ -600,59 +577,52 @@ impl App {
         };
 
         ui.horizontal(|ui| {
+            brand_mark(ui);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.label(RichText::new("PerfectUninstaller").size(17.0).strong().color(pal().text));
+                ui.label(RichText::new(self.platform).size(12.0).color(pal().dim));
+            });
+        });
+        ui.add_space(20.0);
+        let scan_label = if self.busy == Busy::Scan { "Scanning applications" } else { "Scan applications" };
+        if primary_icon_text_button(ui, scan_label, Icon::Refresh, self.busy == Busy::None).clicked() {
+            self.spawn_scan();
+        }
+        ui.add_space(22.0);
+        ui.horizontal(|ui| {
             section_title(ui, "Applications");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 badge(ui, &format!("{count}"), pal().dim, pal().card);
             });
         });
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            icon(ui, Icon::Search, pal().dim, 16.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("Search applications")
-                    .desired_width(f32::INFINITY),
-            );
-        });
-        ui.add_space(12.0);
-
-        ui.separator();
-        ui.add_space(5.0);
-
-        if self.busy == Busy::Scan && self.apps.is_empty() {
-            ui.add_space(24.0);
-            ui.vertical_centered(|ui| {
-                ui.add(egui::Spinner::new().size(24.0).color(pal().accent));
-                ui.add_space(8.0);
-                ui.label(RichText::new("Scanning…").color(pal().dim));
+        ui.add_space(10.0);
+        egui::Frame::new()
+            .fill(pal().control)
+            .stroke(Stroke::new(1.0, pal().card_stroke))
+            .corner_radius(CornerRadius::same(9))
+            .inner_margin(Margin::symmetric(10, 2))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    icon(ui, Icon::Search, pal().dim, 16.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.filter)
+                            .frame(egui::Frame::NONE)
+                            .hint_text("Search applications")
+                            .desired_width(f32::INFINITY),
+                    );
+                });
             });
-            return;
-        }
-
-        if self.apps.is_empty() {
-            ui.add_space(24.0);
-            ui.vertical_centered(|ui| {
-                icon(ui, Icon::Box, pal().dim, 28.0);
-                ui.add_space(6.0);
-                ui.label(RichText::new("No software found").color(pal().dim));
-            });
-            ui.add_space(14.0);
-            ui.vertical_centered(|ui| {
-                if ui.add(primary_button("Scan now")).clicked() {
-                    self.spawn_scan();
-                }
-            });
-            return;
-        }
+        ui.add_space(10.0);
 
         let filtered = self.filtered();
         egui::ScrollArea::vertical()
             .id_salt("apps_scroll")
             .auto_shrink([false, false])
-            .max_height((ui.available_height() - 42.0).max(100.0))
+            .max_height((ui.available_height() - 112.0).max(100.0))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 4.0;
-                if filtered.is_empty() {
+                if !self.apps.is_empty() && filtered.is_empty() {
                     ui.add_space(16.0);
                     ui.vertical_centered(|ui| {
                         ui.label(RichText::new("No matches").color(pal().dim));
@@ -668,66 +638,86 @@ impl App {
             });
 
         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                icon(ui, Icon::Shield, pal().ok, 14.0);
-                ui.label(RichText::new("Review every item before removal").size(10.5).color(pal().dim));
-            });
+            let (mode_label, mode_icon) = if self.dark_mode {
+                ("Light appearance", Icon::Sun)
+            } else {
+                ("Dark appearance", Icon::Moon)
+            };
+            if icon_text_button(ui, "About", Icon::Info).clicked() {
+                self.show_about = true;
+            }
+            if icon_text_button(ui, mode_label, mode_icon).clicked() {
+                self.dark_mode = !self.dark_mode;
+                DARK_MODE.store(self.dark_mode, Ordering::Relaxed);
+                install_theme(ui.ctx(), self.dark_mode);
+            }
         });
     }
 
     fn welcome_view(&mut self, ui: &mut egui::Ui) {
         let rect = ui.available_rect_before_wrap();
         ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-            ui.vertical_centered(|ui| {
-                ui.add_space((rect.height() * 0.11).min(80.0));
-                glass_card(ui, |ui| {
-                    ui.set_max_width(700.0);
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(26.0);
-                        let (mark, _) = ui.allocate_exact_size(Vec2::splat(64.0), Sense::hover());
-                        ui.painter().circle_filled(mark.center(), 32.0, pal().accent_soft);
-                        paint_icon(ui, mark.shrink(17.0), Icon::Shield, pal().accent);
-                        ui.add_space(20.0);
-                        ui.label(
-                            RichText::new("A clean uninstall, made clear.")
-                                .size(28.0)
-                                .strong()
-                                .color(pal().text),
-                        );
-                        ui.add_space(10.0);
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(
-                                    "See the files an app leaves behind. Review every match, choose what to keep, and remove only the items you approve.",
-                                )
-                                .color(pal().dim),
-                            )
-                            .wrap(),
-                        );
-                        ui.add_space(22.0);
-                        if ui.add_enabled(self.busy == Busy::None, primary_button("Scan for applications")).clicked() {
-                            self.spawn_scan();
-                        }
-                        ui.add_space(26.0);
-                        ui.horizontal_wrapped(|ui| {
-                            feature_tile(ui, Icon::Search, "Find leftovers", "Caches, settings and support files");
-                            feature_tile(ui, Icon::Check, "Review first", "Choose exactly what gets removed");
-                            feature_tile(ui, Icon::Shield, "Stay in control", "Protected locations stay untouched");
+            ui.vertical(|ui| {
+                ui.add_space(30.0);
+                section_title(ui, "WORKSPACE");
+                ui.add_space(12.0);
+                let title = if self.apps.is_empty() {
+                    "Start with an application scan"
+                } else {
+                    "Choose an app to review"
+                };
+                ui.label(RichText::new(title).size(32.0).strong().color(pal().text));
+                ui.add_space(8.0);
+                ui.add(
+                    egui::Label::new(
+                        RichText::new("Find leftover files, inspect each match, and decide what stays before anything is removed.")
+                            .size(16.0)
+                            .color(pal().dim),
+                    )
+                    .wrap(),
+                );
+
+                if self.busy == Busy::Scan && self.apps.is_empty() {
+                    ui.add_space(28.0);
+                    glass_card(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Spinner::new().size(22.0).color(pal().accent));
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new("Scanning this device").strong().color(pal().text));
+                                ui.label(RichText::new("Collecting installed applications…").size(13.0).color(pal().dim));
+                            });
                         });
-                        ui.add_space(18.0);
-                        if self.apps.is_empty() {
-                            ui.label(RichText::new("Scanning happens locally on this device.").size(12.5).color(pal().dim));
-                        } else {
-                            ui.label(
-                                RichText::new("Choose an application from the list to begin.")
-                                    .size(12.5)
-                                    .color(pal().dim),
-                            );
-                        }
-                        ui.add_space(14.0);
                     });
-                });
+                } else {
+                    ui.add_space(28.0);
+                    ui.horizontal_wrapped(|ui| {
+                        feature_tile(ui, Icon::Search, "Find the trail", "Caches, settings and support files");
+                        feature_tile(ui, Icon::Check, "Review the list", "Choose exactly what gets removed");
+                        feature_tile(ui, Icon::Shield, "Stay in control", "Protected locations stay untouched");
+                    });
+                    ui.add_space(28.0);
+                    glass_card(ui, |ui| {
+                        let card_width = ui.available_width().min(760.0);
+                        ui.set_min_width(card_width.min(660.0));
+                        ui.set_max_width(card_width);
+                        ui.horizontal(|ui| {
+                            icon(ui, if self.apps.is_empty() { Icon::Refresh } else { Icon::App }, pal().accent, 24.0);
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(if self.apps.is_empty() { "Your library is empty" } else { "Your library is ready" }).strong().color(pal().text));
+                                ui.label(RichText::new(if self.apps.is_empty() { "Run a scan from the left panel to get started." } else { "Select any application in the left panel to inspect its files." }).size(13.0).color(pal().dim));
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let badge = egui::Frame::new()
+                                    .fill(pal().control)
+                                    .corner_radius(egui::CornerRadius::same(9))
+                                    .inner_margin(egui::Margin::symmetric(10, 6));
+                                badge.show(ui, |ui| {
+                                    ui.label(RichText::new("ON DEVICE").size(10.5).strong().color(pal().dim));
+                                });
+                            });
+                        });
+                    });
+                }
             });
         });
     }
@@ -775,6 +765,10 @@ impl App {
                                 .size(12.0)
                                 .color(pal().dim),
                         );
+                        ui.add_space(8.0);
+                        if ui.add(ghost_button("Cancel analysis")).clicked() {
+                            self.cancel_analysis();
+                        }
                         ui.add_space(20.0);
                     });
                 });
@@ -787,50 +781,44 @@ impl App {
             return;
         };
 
-        ui.horizontal(|ui| {
-            if icon_text_button(ui, "Applications", Icon::Back).clicked() {
-                self.plan = None;
-                self.checked.clear();
-                self.selected = None;
-            }
-            ui.add_space(6.0);
-            avatar(ui, &plan.app.name, 40.0, pal().control);
-            ui.add_space(2.0);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 1.0;
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    ui.label(
-                        RichText::new(&plan.app.name)
-                            .size(21.0)
-                            .strong()
-                            .color(pal().text),
-                    );
-                    badge(ui, plan.app.method.label(), pal().dim, pal().card);
-                });
-                if let Some(id) = &plan.app.identifier {
-                    if id != &plan.app.name {
-                        ui.label(RichText::new(id).monospace().size(12.5).color(pal().dim));
+        if icon_text_button(ui, "Back to applications", Icon::Back).clicked() {
+            self.plan = None;
+            self.checked.clear();
+            self.selected = None;
+            return;
+        }
+        ui.add_space(8.0);
+        glass_card(ui, |ui| {
+            ui.horizontal(|ui| {
+                avatar(ui, &plan.app.name, 48.0, pal().accent_soft);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(RichText::new(&plan.app.name).size(23.0).strong().color(pal().text));
+                    if let Some(id) = &plan.app.identifier {
+                        if id != &plan.app.name {
+                            ui.label(RichText::new(id).monospace().size(12.5).color(pal().dim));
+                        }
+                    } else {
+                        ui.label(RichText::new("Application details").size(12.5).color(pal().dim));
                     }
-                }
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    badge(ui, plan.app.method.label(), pal().accent, pal().accent_soft);
+                });
             });
         });
 
         let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
-        let selected_bytes = plan.selected_bytes(&selected);
 
-        ui.add_space(14.0);
+        ui.add_space(10.0);
         ui.horizontal(|ui| {
-            stat_card(ui, "Selected data", &format_bytes(selected_bytes), pal().accent);
-            stat_card(ui, "All matches", &format_bytes(plan.total_bytes), pal().text);
-            stat_card(ui, "Data groups", &format!("{}", group_categories(&plan).len()), pal().text);
+            icon(ui, Icon::Search, pal().accent, 17.0);
+            ui.label(RichText::new(format!("{} locations found", plan.candidates.len())).strong().color(pal().text));
+            ui.label(RichText::new("·").color(pal().dim));
+            ui.label(RichText::new(format!("{} groups", group_categories(&plan).len())).color(pal().dim));
+            ui.label(RichText::new("·").color(pal().dim));
+            ui.label(RichText::new(format!("about {} total", format_bytes(plan.total_bytes))).color(pal().dim));
         });
-        ui.add_space(4.0);
-        ui.label(
-            RichText::new("Folder sizes are estimated with a time limit. Final freed space is measured after removal.")
-                .size(12.0)
-                .color(pal().dim),
-        );
 
         if !plan.warnings.is_empty() {
             ui.add_space(10.0);
@@ -876,41 +864,18 @@ impl App {
                 });
         }
 
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            section_title(ui, "Choose what to remove");
-            ui.add_space(6.0);
-            ui.label(
-                RichText::new(format!(
-                    "{} of {} items selected",
-                    selected.len(),
-                    plan.candidates.len()
-                ))
-                .size(12.5)
-                .color(pal().dim),
-            );
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let enabled = !selected.is_empty() && self.busy == Busy::None;
-                if danger_icon_text_button(
-                    ui,
-                    &format!("Uninstall  ·  {}", format_bytes(selected_bytes)),
-                    Icon::Trash,
-                    enabled,
-                ).clicked() {
-                    self.confirm = ConfirmStage::Review;
-                    self.confirm_ack = false;
-                    self.confirm_name.clear();
-                }
-            });
-        });
-        ui.add_space(10.0);
-
         let all_checked = selected.len() == plan.candidates.len() && !selected.is_empty();
         let default_checked = {
             let defaults: Vec<PathBuf> = Engine::default_selection(&plan).into_iter().collect();
             !defaults.is_empty() && defaults.iter().all(|p| self.checked.contains(p))
         };
+        ui.add_space(18.0);
         ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                section_title(ui, "Review locations");
+                ui.label(RichText::new("Select the files and folders to include").size(12.5).color(pal().dim));
+            });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let mut seg_all = egui::Button::new("All")
                 .selected(all_checked)
                 .fill(pal().control);
@@ -933,6 +898,7 @@ impl App {
             if ui.add(seg_none).clicked() {
                 self.set_all(false);
             }
+            });
         });
         ui.add_space(12.0);
 
@@ -1535,11 +1501,8 @@ fn brand_mark(ui: &mut egui::Ui) {
 }
 
 fn icon_text_button(ui: &mut egui::Ui, text: &str, glyph: Icon) -> egui::Response {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 34.0), Sense::hover());
-        paint_icon(ui, rect.shrink(2.0), glyph, pal().text);
-        ui.add(ghost_button(text))
-    }).inner
+    let width = (text.chars().count() as f32 * 8.0 + 52.0).max(86.0).min(ui.available_width());
+    icon_action_button(ui, text, glyph, ActionButtonStyle::Ghost, true, width)
 }
 
 fn primary_icon_text_button(
@@ -1548,12 +1511,7 @@ fn primary_icon_text_button(
     glyph: Icon,
     enabled: bool,
 ) -> egui::Response {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 34.0), Sense::hover());
-        paint_icon(ui, rect.shrink(2.0), glyph, Color32::WHITE);
-        ui.add_enabled(enabled, primary_button(text))
-    })
-    .inner
+    icon_action_button(ui, text, glyph, ActionButtonStyle::Primary, enabled, ui.available_width())
 }
 
 fn danger_icon_text_button(
@@ -1562,19 +1520,59 @@ fn danger_icon_text_button(
     glyph: Icon,
     enabled: bool,
 ) -> egui::Response {
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(18.0, 38.0), Sense::hover());
-        paint_icon(ui, rect.shrink(2.0), glyph, Color32::WHITE);
-        ui.add_enabled(
-            enabled,
-            egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
-                .fill(pal().danger_fill)
-                .stroke(Stroke::new(1.0, pal().danger))
-                .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
-                .min_size(Vec2::new(220.0, 40.0)),
-        )
-    })
-    .inner
+    let width = (text.chars().count() as f32 * 8.0 + 62.0).max(220.0).min(ui.available_width());
+    icon_action_button(ui, text, glyph, ActionButtonStyle::Danger, enabled, width)
+}
+
+fn icon_action_button(
+    ui: &mut egui::Ui,
+    text: &str,
+    glyph: Icon,
+    style: ActionButtonStyle,
+    enabled: bool,
+    width: f32,
+) -> egui::Response {
+    let height = match style { ActionButtonStyle::Danger => 42.0, _ => 40.0 };
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(width.max(76.0), height),
+        if enabled { Sense::click() } else { Sense::hover() },
+    );
+    let (fill, edge, ink) = match style {
+        ActionButtonStyle::Primary if enabled => (pal().accent_fill, pal().accent, Color32::WHITE),
+        ActionButtonStyle::Primary => (pal().control, pal().card_stroke, pal().dim),
+        ActionButtonStyle::Ghost => (
+            if response.hovered() { pal().control_hover } else { pal().control },
+            pal().card_stroke,
+            if enabled { pal().text } else { pal().dim },
+        ),
+        ActionButtonStyle::Danger => (pal().danger_fill, pal().danger, Color32::WHITE),
+    };
+    let fill = if response.is_pointer_button_down_on() {
+        match style {
+            ActionButtonStyle::Primary => pal().control_active,
+            ActionButtonStyle::Ghost => pal().control_active,
+            ActionButtonStyle::Danger => pal().danger_fill,
+        }
+    } else {
+        fill
+    };
+    let radius = CornerRadius::same((pal().radius / 2).max(7));
+    ui.painter().rect_filled(rect, radius, fill);
+    ui.painter().rect_stroke(rect.shrink(0.5), radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 21.0, rect.center().y),
+        Vec2::splat(18.0),
+    );
+    paint_icon(ui, icon_rect, glyph, ink);
+    ui.painter().text(
+        egui::pos2(rect.left() + 39.0, rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        text,
+        egui::FontId::proportional(14.5),
+        ink,
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, text));
+    response
 }
 
 fn icon(ui: &mut egui::Ui, glyph: Icon, color: Color32, size: f32) {
@@ -1634,16 +1632,12 @@ fn paint_icon(ui: &egui::Ui, rect: egui::Rect, glyph: Icon, color: Color32) {
             seg(egui::pos2(c.x, c.y - s * 0.16), egui::pos2(c.x, c.y + s * 0.1));
             painter.circle_filled(egui::pos2(c.x, c.y + s * 0.25), line * 0.7, color);
         }
-        Icon::Box | Icon::App => {
+        Icon::App => {
             painter.rect_stroke(rect.shrink(s * 0.06), CornerRadius::same((s * 0.12) as u8), stroke, egui::StrokeKind::Inside);
             seg(egui::pos2(rect.left() + s * 0.06, rect.top() + s * 0.25), egui::pos2(rect.right() - s * 0.06, rect.top() + s * 0.25));
-            if matches!(glyph, Icon::App) {
-                for i in 0..3 { painter.circle_filled(egui::pos2(rect.left() + s * (0.17 + i as f32 * 0.13), rect.top() + s * 0.14), line * 0.65, color); }
-                seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.43), egui::pos2(rect.right() - s * 0.2, rect.top() + s * 0.43));
-                seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.59), egui::pos2(rect.right() - s * 0.32, rect.top() + s * 0.59));
-            } else {
-                seg(egui::pos2(c.x, rect.top() + s * 0.25), egui::pos2(c.x, rect.bottom() - s * 0.08));
-            }
+            for i in 0..3 { painter.circle_filled(egui::pos2(rect.left() + s * (0.17 + i as f32 * 0.13), rect.top() + s * 0.14), line * 0.65, color); }
+            seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.43), egui::pos2(rect.right() - s * 0.2, rect.top() + s * 0.43));
+            seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.59), egui::pos2(rect.right() - s * 0.32, rect.top() + s * 0.59));
         }
         Icon::Check => {
             seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(c.x - s * 0.06, c.y + s * 0.19));
@@ -1691,7 +1685,7 @@ fn glass_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
 
 fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: bool) -> egui::Response {
     let width = ui.available_width();
-    let height = 54.0;
+    let height = 68.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
 
     if ui.is_rect_visible(rect) {
@@ -1764,6 +1758,13 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
         );
     }
 
+    response.widget_info(|| {
+        if selected {
+            egui::WidgetInfo::selected(egui::WidgetType::Button, true, true, &app.name)
+        } else {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &app.name)
+        }
+    });
     response
 }
 
