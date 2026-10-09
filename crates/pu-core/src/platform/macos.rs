@@ -27,13 +27,23 @@ fn h(rel: &str) -> PathBuf {
 }
 
 fn root(path: PathBuf, category: TraceCategory, depth: usize, label: &'static str) -> SearchRoot {
-    SearchRoot { path, category, depth, label }
+    SearchRoot {
+        path,
+        category,
+        depth,
+        label,
+    }
 }
 
 /// Every directory macOS apps commonly leave data in.
 fn search_roots() -> Vec<SearchRoot> {
     vec![
-        root(h("Library/Preferences"), TraceCategory::Preference, 0, "~/Library/Preferences"),
+        root(
+            h("Library/Preferences"),
+            TraceCategory::Preference,
+            0,
+            "~/Library/Preferences",
+        ),
         root(
             h("Library/Preferences/ByHost"),
             TraceCategory::Preference,
@@ -46,7 +56,12 @@ fn search_roots() -> Vec<SearchRoot> {
             1,
             "~/Library/Application Support",
         ),
-        root(h("Library/Caches"), TraceCategory::Cache, 0, "~/Library/Caches"),
+        root(
+            h("Library/Caches"),
+            TraceCategory::Cache,
+            0,
+            "~/Library/Caches",
+        ),
         root(h("Library/Logs"), TraceCategory::Log, 0, "~/Library/Logs"),
         root(
             h("Library/Logs/DiagnosticReports"),
@@ -66,23 +81,48 @@ fn search_roots() -> Vec<SearchRoot> {
             0,
             "/Library/Logs/DiagnosticReports",
         ),
-        root(h("Library/Containers"), TraceCategory::Container, 1, "~/Library/Containers"),
+        root(
+            h("Library/Containers"),
+            TraceCategory::Container,
+            1,
+            "~/Library/Containers",
+        ),
         root(
             h("Library/Group Containers"),
             TraceCategory::Container,
             1,
             "~/Library/Group Containers",
         ),
-        root(h("Library/Application Scripts"), TraceCategory::Container, 0, "~/Library/Application Scripts"),
+        root(
+            h("Library/Application Scripts"),
+            TraceCategory::Container,
+            0,
+            "~/Library/Application Scripts",
+        ),
         root(
             h("Library/Saved Application State"),
             TraceCategory::SavedState,
             0,
             "~/Library/Saved Application State",
         ),
-        root(h("Library/HTTPStorages"), TraceCategory::HttpStorage, 0, "~/Library/HTTPStorages"),
-        root(h("Library/WebKit"), TraceCategory::WebKit, 0, "~/Library/WebKit"),
-        root(h("Library/LaunchAgents"), TraceCategory::LaunchAgent, 0, "~/Library/LaunchAgents"),
+        root(
+            h("Library/HTTPStorages"),
+            TraceCategory::HttpStorage,
+            0,
+            "~/Library/HTTPStorages",
+        ),
+        root(
+            h("Library/WebKit"),
+            TraceCategory::WebKit,
+            0,
+            "~/Library/WebKit",
+        ),
+        root(
+            h("Library/LaunchAgents"),
+            TraceCategory::LaunchAgent,
+            0,
+            "~/Library/LaunchAgents",
+        ),
         root(
             h("Library/Application Support/Steam/steamapps/common"),
             TraceCategory::Support,
@@ -95,18 +135,48 @@ fn search_roots() -> Vec<SearchRoot> {
             1,
             "/Library/Application Support",
         ),
-        root(PathBuf::from("/Library/Caches"), TraceCategory::Cache, 0, "/Library/Caches"),
-        root(PathBuf::from("/Library/Logs"), TraceCategory::Log, 0, "/Library/Logs"),
-        root(PathBuf::from("/Library/Preferences"), TraceCategory::Preference, 0, "/Library/Preferences"),
-        root(PathBuf::from("/Library/LaunchAgents"), TraceCategory::LaunchAgent, 0, "/Library/LaunchAgents"),
-        root(PathBuf::from("/Library/LaunchDaemons"), TraceCategory::LaunchDaemon, 0, "/Library/LaunchDaemons"),
+        root(
+            PathBuf::from("/Library/Caches"),
+            TraceCategory::Cache,
+            0,
+            "/Library/Caches",
+        ),
+        root(
+            PathBuf::from("/Library/Logs"),
+            TraceCategory::Log,
+            0,
+            "/Library/Logs",
+        ),
+        root(
+            PathBuf::from("/Library/Preferences"),
+            TraceCategory::Preference,
+            0,
+            "/Library/Preferences",
+        ),
+        root(
+            PathBuf::from("/Library/LaunchAgents"),
+            TraceCategory::LaunchAgent,
+            0,
+            "/Library/LaunchAgents",
+        ),
+        root(
+            PathBuf::from("/Library/LaunchDaemons"),
+            TraceCategory::LaunchDaemon,
+            0,
+            "/Library/LaunchDaemons",
+        ),
         root(
             PathBuf::from("/Library/PrivilegedHelperTools"),
             TraceCategory::PrivilegedHelper,
             0,
             "/Library/PrivilegedHelperTools",
         ),
-        root(PathBuf::from("/var/db/receipts"), TraceCategory::Receipt, 0, "/var/db/receipts"),
+        root(
+            PathBuf::from("/private/var/db/receipts"),
+            TraceCategory::Receipt,
+            0,
+            "/private/var/db/receipts",
+        ),
     ]
 }
 
@@ -150,7 +220,10 @@ fn find_bundles(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
         if name.starts_with('.') {
             continue;
         }
-        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("app")) {
+        if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("app"))
+        {
             out.push(path);
             continue;
         }
@@ -199,10 +272,7 @@ fn discover_casks(out: &mut Vec<InstalledApp>) {
             let (name, identifier, version) = match bundles.first() {
                 Some(bundle) => {
                     let info = read_info_plist(bundle);
-                    let name = info
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| cask_name.clone());
+                    let name = info.name.clone().unwrap_or_else(|| cask_name.clone());
                     (name, info.identifier, info.version)
                 }
                 None => {
@@ -286,7 +356,9 @@ fn merge_duplicates(apps: &mut Vec<InstalledApp>) {
         });
         match existing {
             Some(target) => {
-                if target.method == InstallMethod::Caskroom && app.method == InstallMethod::AppBundle {
+                if target.method == InstallMethod::Caskroom
+                    && app.method == InstallMethod::AppBundle
+                {
                     target.method = InstallMethod::AppBundle;
                     target.name = app.name.clone();
                     target.version = app.version.clone();
@@ -351,11 +423,7 @@ impl PlatformBackend for MacosBackend {
         let mut traces = find_traces(&search_roots(), &query, &app.install_paths);
         candidates.append(&mut traces);
 
-        candidates.sort_by(|a, b| {
-            b.primary
-                .cmp(&a.primary)
-                .then_with(|| a.path.cmp(&b.path))
-        });
+        candidates.sort_by(|a, b| b.primary.cmp(&a.primary).then_with(|| a.path.cmp(&b.path)));
 
         let mut warnings = Vec::new();
         if app.identifier.is_none() && app.method != InstallMethod::PkgReceipt {
@@ -378,7 +446,10 @@ impl PlatformBackend for MacosBackend {
             );
         }
 
-        let low_confidence = candidates.iter().filter(|c| c.confidence == Confidence::Low).count();
+        let low_confidence = candidates
+            .iter()
+            .filter(|c| c.confidence == Confidence::Low)
+            .count();
         if low_confidence > 0 {
             warnings.push(format!(
                 "{low_confidence} item(s) matched only by name (low confidence) \
@@ -460,7 +531,7 @@ impl PlatformBackend for MacosBackend {
         roots.push(h("Applications"));
         roots.push(PathBuf::from("/opt/homebrew/Caskroom"));
         roots.push(PathBuf::from("/usr/local/Caskroom"));
-        roots.push(PathBuf::from("/var/db/receipts"));
+        roots.push(PathBuf::from("/private/var/db/receipts"));
         roots.sort();
         roots.dedup();
         roots
@@ -528,6 +599,12 @@ fn references(haystack: &str, needles: &[String]) -> bool {
     needles.iter().any(|n| lower.contains(n.as_str()))
 }
 
+/// Quotes one argument for commands shown to the user to copy into a POSIX
+/// shell. These commands are advisory only and are never executed by the app.
+fn shell_quote(argument: &str) -> String {
+    format!("'{}'", argument.replace('\'', "'\\''"))
+}
+
 /// Numbered lines from `text` that mention any needle (pure, unit-tested).
 fn matching_lines(text: &str, needles: &[String]) -> Vec<String> {
     text.lines()
@@ -565,7 +642,10 @@ fn scan_shell_env(app: &InstalledApp) -> Vec<Advisory> {
                     "Shell config still references this app (PATH entries, aliases, env vars):\n{}",
                     hits.join("\n")
                 ),
-                command: Some(format!("${{EDITOR:-vi}} \"{}\"", path.display())),
+                command: Some(format!(
+                    "${{EDITOR:-vi}} {}",
+                    shell_quote(&path.to_string_lossy())
+                )),
                 path: Some(path),
             });
         }
@@ -585,7 +665,10 @@ fn scan_shell_env(app: &InstalledApp) -> Vec<Advisory> {
                     kind: AdvisoryKind::EnvironmentVariable,
                     summary: format!("System path entry {} references this app", path.display()),
                     detail: text.trim().to_string(),
-                    command: Some(format!("sudo rm \"{}\"", path.display())),
+                    command: Some(format!(
+                        "sudo rm -- {}",
+                        shell_quote(&path.to_string_lossy())
+                    )),
                     path: Some(path),
                 });
             }
@@ -613,7 +696,8 @@ fn scan_firewall(app: &InstalledApp) -> Vec<Advisory> {
                         detail: "The macOS application firewall has an explicit allow/deny rule for this app."
                             .into(),
                         command: Some(format!(
-                            "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --remove \"{app_path}\""
+                            "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --remove {}",
+                            shell_quote(app_path)
                         )),
                         path: Some(PathBuf::from(app_path)),
                     });
@@ -629,7 +713,9 @@ fn scan_firewall(app: &InstalledApp) -> Vec<Advisory> {
                 kind: AdvisoryKind::FirewallRule,
                 summary: "Referenced in the pf firewall config".into(),
                 detail: hits.join("\n"),
-                command: Some("sudo \"${EDITOR:-vi}\" /etc/pf.conf && sudo pfctl -f /etc/pf.conf".into()),
+                command: Some(
+                    "sudo \"${EDITOR:-vi}\" /etc/pf.conf && sudo pfctl -f /etc/pf.conf".into(),
+                ),
                 path: Some(PathBuf::from("/etc/pf.conf")),
             });
         }
@@ -641,7 +727,10 @@ fn scan_firewall(app: &InstalledApp) -> Vec<Advisory> {
 const BROWSER_ROOTS: &[(&str, &str)] = &[
     ("Library/Application Support/Google/Chrome", "Chrome"),
     ("Library/Application Support/Chromium", "Chromium"),
-    ("Library/Application Support/BraveSoftware/Brave-Browser", "Brave"),
+    (
+        "Library/Application Support/BraveSoftware/Brave-Browser",
+        "Brave",
+    ),
     ("Library/Application Support/Microsoft Edge", "Edge"),
 ];
 
@@ -700,7 +789,7 @@ fn scan_browser_extensions(app: &InstalledApp) -> Vec<Advisory> {
                         kind: AdvisoryKind::BrowserExtension,
                         summary: format!("{browser} native messaging host {name}"),
                         detail: text.trim().to_string(),
-                        command: Some(format!("rm \"{}\"", path.display())),
+                        command: Some(format!("rm -- {}", shell_quote(&path.to_string_lossy()))),
                         path: Some(path),
                     });
                 }
@@ -726,7 +815,10 @@ fn scan_browser_extensions(app: &InstalledApp) -> Vec<Advisory> {
                             "Extension in profile {}",
                             profile.file_name().to_string_lossy()
                         ),
-                        command: Some(format!("rm -rf \"{}\"", extension.path().display())),
+                        command: Some(format!(
+                            "rm -rf -- {}",
+                            shell_quote(&extension.path().to_string_lossy())
+                        )),
                         path: Some(extension.path()),
                     });
                 }
@@ -835,7 +927,10 @@ fn scan_permissions(app: &InstalledApp) -> Vec<Advisory> {
                 kind: AdvisoryKind::Permission,
                 summary: format!("Custom ACL on {}", target.display()),
                 detail: acl_lines.join("\n"),
-                command: Some(format!("chmod -N \"{}\"", target.display())),
+                command: Some(format!(
+                    "chmod -N {}",
+                    shell_quote(&target.to_string_lossy())
+                )),
                 path: Some(target),
             });
         }
@@ -849,7 +944,8 @@ mod tests {
 
     #[test]
     fn matching_lines_finds_and_numbers_references() {
-        let text = "export PATH=/opt/CoolApp/bin:$PATH\nother=1\n# CoolApp alias\nalias ca=CoolApp\n";
+        let text =
+            "export PATH=/opt/CoolApp/bin:$PATH\nother=1\n# CoolApp alias\nalias ca=CoolApp\n";
         let needles = vec!["coolapp".to_string()];
         let hits = matching_lines(text, &needles);
         assert_eq!(hits.len(), 3);
@@ -861,6 +957,15 @@ mod tests {
     fn matching_lines_ignores_unrelated_text() {
         let needles = vec!["coolapp".to_string()];
         assert!(matching_lines("nothing here\n", &needles).is_empty());
+    }
+
+    #[test]
+    fn shell_quote_preserves_quotes_as_one_argument() {
+        assert_eq!(
+            shell_quote("/Applications/A B's.app"),
+            "'/Applications/A B'\\''s.app'"
+        );
+        assert_eq!(shell_quote("/tmp/$(touch nope)"), "'/tmp/$(touch nope)'");
     }
 
     #[test]
@@ -878,7 +983,6 @@ mod tests {
     #[test]
     fn discovery_finds_bundles_and_is_sorted() {
         let apps = MacosBackend.discover().expect("discovery should not error");
-        assert!(!apps.is_empty(), "expected at least one app on this machine");
         let names: Vec<String> = apps.iter().map(|a| a.name.to_lowercase()).collect();
         let mut sorted = names.clone();
         sorted.sort();

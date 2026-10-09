@@ -240,7 +240,7 @@ pub struct RemovalReport {
 
 impl RemovalReport {
     pub fn success(&self) -> bool {
-        self.failed.is_empty()
+        self.failed.is_empty() && self.refused.is_empty()
     }
 }
 

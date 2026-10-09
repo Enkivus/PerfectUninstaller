@@ -6,7 +6,9 @@ use std::time::Instant;
 use crate::error::{Error, Result};
 use crate::models::{Confidence, InstalledApp, Platform, RemovalPlan, RemovalReport};
 use crate::platform::{self, PlatformBackend};
-use crate::safety::{ensure_safe, ensure_within_roots};
+use crate::safety::{
+    ensure_no_symlink_escape, ensure_safe_install_target, ensure_within_roots, same_path,
+};
 use crate::util::measure;
 
 /// High level API: scan → analyze → uninstall.
@@ -38,7 +40,33 @@ impl Engine {
     }
 
     pub fn analyze(&self, app: &InstalledApp) -> Result<RemovalPlan> {
-        self.backend.analyze(app)
+        let mut plan = self.backend.analyze(app)?;
+        let roots = self.allowed_roots(&plan);
+        let before = plan.candidates.len();
+        plan.candidates.retain(|candidate| {
+            ensure_safe_install_target(&candidate.path, &plan.app.install_paths)
+                .and_then(|_| ensure_within_roots(&candidate.path, &roots))
+                .and_then(|_| ensure_no_symlink_escape(&candidate.path, &roots))
+                .is_ok()
+        });
+        let refused = before - plan.candidates.len();
+        if refused > 0 {
+            plan.warnings.push(format!(
+                "{refused} potential item(s) were omitted because they did not pass the removal safety checks."
+            ));
+        }
+        plan.total_bytes = plan
+            .candidates
+            .iter()
+            .map(|candidate| candidate.bytes)
+            .sum();
+        Ok(plan)
+    }
+
+    fn allowed_roots(&self, plan: &RemovalPlan) -> Vec<PathBuf> {
+        let mut roots = self.backend.trace_roots();
+        roots.extend(plan.app.install_paths.iter().cloned());
+        roots
     }
 
     /// What gets ticked by default: the install locations plus every
@@ -64,8 +92,7 @@ impl Engine {
     ) -> Result<RemovalReport> {
         let started = Instant::now();
 
-        let mut roots = self.backend.trace_roots();
-        roots.extend(plan.app.install_paths.iter().cloned());
+        let roots = self.allowed_roots(plan);
 
         let (audit_path, mut audit) = create_audit_log(plan, selected)?;
 
@@ -74,7 +101,7 @@ impl Engine {
             bytes_freed: 0,
             failed: Vec::new(),
             refused: Vec::new(),
-            audit_log: Some(audit_path),
+            audit_log: Some(audit_path.clone()),
             report_dir: None,
             elapsed_ms: 0,
         };
@@ -86,14 +113,30 @@ impl Engine {
         for (index, path) in ordered.iter().enumerate() {
             progress(path, index + 1, total);
 
-            if let Err(err) = ensure_safe(path).and_then(|_| ensure_within_roots(path, &roots)) {
+            let planned = plan
+                .candidates
+                .iter()
+                .any(|candidate| same_path(&candidate.path, path));
+            let guard = if planned {
+                ensure_safe_install_target(path, &plan.app.install_paths)
+                    .and_then(|_| ensure_within_roots(path, &roots))
+                    .and_then(|_| ensure_no_symlink_escape(path, &roots))
+            } else {
+                Err(Error::UnsafePath(path.clone()))
+            };
+            if let Err(err) = guard {
                 report.refused.push(path.clone());
-                log_line(&mut audit, &serde_json::json!({
-                    "type": "delete",
-                    "path": path.display().to_string(),
-                    "status": "refused",
-                    "error": err.to_string(),
-                }));
+                log_line(
+                    &mut audit,
+                    &serde_json::json!({
+                        "type": "delete",
+                        "path": path.display().to_string(),
+                        "status": "refused",
+                        "error": err.to_string(),
+                    }),
+                )
+                .and_then(|_| audit.flush())
+                .map_err(|error| Error::io(&audit_path, error))?;
                 continue;
             }
 
@@ -102,31 +145,47 @@ impl Engine {
                 Ok(()) => {
                     report.removed.push(path.clone());
                     report.bytes_freed += bytes;
-                    log_line(&mut audit, &serde_json::json!({
-                        "type": "delete",
-                        "path": path.display().to_string(),
-                        "bytes": bytes,
-                        "status": "removed",
-                    }));
+                    log_line(
+                        &mut audit,
+                        &serde_json::json!({
+                            "type": "delete",
+                            "path": path.display().to_string(),
+                            "bytes": bytes,
+                            "status": "removed",
+                        }),
+                    )
+                    .and_then(|_| audit.flush())
+                    .map_err(|error| Error::io(&audit_path, error))?;
                 }
-                Err(message) if message.contains("No such file") => {
-                    log_line(&mut audit, &serde_json::json!({
-                        "type": "delete",
-                        "path": path.display().to_string(),
-                        "status": "already_gone",
-                    }));
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    log_line(
+                        &mut audit,
+                        &serde_json::json!({
+                            "type": "delete",
+                            "path": path.display().to_string(),
+                            "status": "already_gone",
+                        }),
+                    )
+                    .and_then(|_| audit.flush())
+                    .map_err(|error| Error::io(&audit_path, error))?;
                 }
-                Err(message) => {
+                Err(error) => {
+                    let message = error.to_string();
                     report.failed.push(crate::models::RemovalFailure {
                         path: path.clone(),
                         message: message.clone(),
                     });
-                    log_line(&mut audit, &serde_json::json!({
-                        "type": "delete",
-                        "path": path.display().to_string(),
-                        "status": "failed",
-                        "error": message,
-                    }));
+                    log_line(
+                        &mut audit,
+                        &serde_json::json!({
+                            "type": "delete",
+                            "path": path.display().to_string(),
+                            "status": "failed",
+                            "error": message,
+                        }),
+                    )
+                    .and_then(|_| audit.flush())
+                    .map_err(|error| Error::io(&audit_path, error))?;
                 }
             }
         }
@@ -141,8 +200,9 @@ impl Engine {
                 "bytes_freed": report.bytes_freed,
                 "elapsed_ms": started.elapsed().as_millis(),
             }),
-        );
-        let _ = audit.flush();
+        )
+        .and_then(|_| audit.flush())
+        .map_err(|error| Error::io(&audit_path, error))?;
 
         report.elapsed_ms = started.elapsed().as_millis();
 
@@ -167,30 +227,42 @@ impl Engine {
     }
 }
 
-fn remove_path(path: &Path) -> std::result::Result<(), String> {
-    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+fn remove_path(path: &Path) -> std::io::Result<()> {
+    let meta = fs::symlink_metadata(path)?;
     if meta.is_dir() {
-        fs::remove_dir_all(path).map_err(|e| e.to_string())
+        fs::remove_dir_all(path)
     } else {
-        fs::remove_file(path).map_err(|e| e.to_string())
+        fs::remove_file(path)
     }
 }
 
 fn audit_dir() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| Error::Other("HOME is not set".into()))?;
+    let home = crate::util::home_dir()
+        .ok_or_else(|| Error::Other("user home directory is not set".into()))?;
     let dir = home.join(".perfectuninstaller").join("audit");
     fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
     Ok(dir)
 }
 
-fn create_audit_log(plan: &RemovalPlan, selected: &[PathBuf]) -> Result<(PathBuf, BufWriter<File>)> {
+fn create_audit_log(
+    plan: &RemovalPlan,
+    selected: &[PathBuf],
+) -> Result<(PathBuf, BufWriter<File>)> {
     let dir = audit_dir()?;
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%f");
-    let path = dir.join(format!("uninstall-{stamp}.jsonl"));
-    let mut file = BufWriter::new(File::create(&path).map_err(|e| Error::io(&path, e))?);
+    let (path, file) = loop {
+        let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S-%f");
+        let path = dir.join(format!("uninstall-{stamp}.jsonl"));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => break (path, file),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(Error::io(&path, error)),
+        }
+    };
+    let mut file = BufWriter::new(file);
     writeln!(
         file,
         "{}",
@@ -205,14 +277,13 @@ fn create_audit_log(plan: &RemovalPlan, selected: &[PathBuf]) -> Result<(PathBuf
         })
     )
     .map_err(|e| Error::io(&path, e))?;
-    let _ = file.flush();
+    file.flush().map_err(|error| Error::io(&path, error))?;
     Ok((path, file))
 }
 
-fn log_line<W: Write>(writer: &mut W, value: &serde_json::Value) {
-    if let Ok(line) = serde_json::to_string(value) {
-        let _ = writeln!(writer, "{line}");
-    }
+fn log_line<W: Write>(writer: &mut W, value: &serde_json::Value) -> std::io::Result<()> {
+    let line = serde_json::to_string(value).map_err(std::io::Error::other)?;
+    writeln!(writer, "{line}")
 }
 
 #[cfg(test)]
@@ -302,6 +373,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
 
+        let tmp = fs::canonicalize(tmp).unwrap();
         let plan = fake_plan(&tmp);
         let engine = Engine::new();
         let escape = PathBuf::from("/etc/hosts");
@@ -310,9 +382,34 @@ mod tests {
             .expect("uninstall runs and reports");
         assert!(report.removed.is_empty());
         assert_eq!(report.refused.len(), 1, "unsafe path must be refused");
+        assert!(!report.success(), "refused removal is not a full success");
         assert!(Path::new("/etc/hosts").exists(), "system file untouched");
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn refuses_paths_that_are_not_in_the_plan() {
+        let tmp = std::env::temp_dir().join(format!("pu-engine-plan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let victim = tmp.join("Test.app/Contents/unplanned");
+        fs::create_dir_all(victim.parent().unwrap()).unwrap();
+        fs::write(&victim, "keep me").unwrap();
+
+        let tmp = fs::canonicalize(tmp).unwrap();
+        let victim = tmp.join("Test.app/Contents/unplanned");
+        let plan = fake_plan(&tmp);
+        let engine = Engine::new();
+        let report = engine
+            .uninstall(&plan, std::slice::from_ref(&victim), &mut |_, _, _| {})
+            .expect("uninstall reports refused selections");
+
+        assert_eq!(report.refused, vec![victim.clone()]);
+        assert!(victim.exists(), "unplanned path must remain untouched");
+        if let Some(audit) = report.audit_log {
+            let _ = fs::remove_file(audit);
+        }
+        let _ = fs::remove_dir_all(tmp);
     }
 
     #[test]
@@ -323,6 +420,8 @@ mod tests {
         fs::create_dir_all(victim.join("Contents")).unwrap();
         fs::write(victim.join("Contents/binary"), "data").unwrap();
 
+        let tmp = fs::canonicalize(tmp).unwrap();
+        let victim = tmp.join("Test.app");
         let plan = fake_plan(&tmp);
         let engine = Engine::new();
         let mut seen = Vec::new();
@@ -335,6 +434,7 @@ mod tests {
         assert!(!victim.exists(), "victim must be gone");
         assert_eq!(report.removed.len(), 1);
         assert!(report.failed.is_empty(), "failures: {:?}", report.failed);
+        assert!(report.success());
         assert_eq!(seen.len(), 1);
 
         let audit = report.audit_log.expect("audit log written");

@@ -105,7 +105,11 @@ fn parse_desktop(path: &Path) -> Option<DesktopEntry> {
         }
     }
 
-    Some(DesktopEntry { name: name?, exec, hidden })
+    Some(DesktopEntry {
+        name: name?,
+        exec,
+        hidden,
+    })
 }
 
 /// Absolute executable from an Exec= line (`/opt/foo/bin/app --flag %U`).
@@ -154,7 +158,10 @@ fn discover_desktop_files(dir: &Path, method: InstallMethod, out: &mut Vec<Insta
 }
 
 fn discover_flatpak(out: &mut Vec<InstalledApp>) {
-    for root in [h(".local/share/flatpak/app"), PathBuf::from("/var/lib/flatpak/app")] {
+    for root in [
+        h(".local/share/flatpak/app"),
+        PathBuf::from("/var/lib/flatpak/app"),
+    ] {
         let Ok(read) = fs::read_dir(&root) else {
             continue;
         };
@@ -187,9 +194,18 @@ impl PlatformBackend for LinuxBackend {
         let mut apps = Vec::new();
         for (dir, method) in [
             (h(".local/share/applications"), InstallMethod::Manual),
-            (PathBuf::from("/usr/share/applications"), InstallMethod::Package),
-            (PathBuf::from("/usr/local/share/applications"), InstallMethod::Package),
-            (PathBuf::from("/var/lib/snapd/desktop/applications"), InstallMethod::Snap),
+            (
+                PathBuf::from("/usr/share/applications"),
+                InstallMethod::Package,
+            ),
+            (
+                PathBuf::from("/usr/local/share/applications"),
+                InstallMethod::Package,
+            ),
+            (
+                PathBuf::from("/var/lib/snapd/desktop/applications"),
+                InstallMethod::Snap,
+            ),
         ] {
             discover_desktop_files(&dir, method, &mut apps);
         }
@@ -247,7 +263,10 @@ impl PlatformBackend for LinuxBackend {
                     .into(),
             );
         }
-        let low_confidence = candidates.iter().filter(|c| c.confidence == Confidence::Low).count();
+        let low_confidence = candidates
+            .iter()
+            .filter(|c| c.confidence == Confidence::Low)
+            .count();
         if low_confidence > 0 {
             warnings.push(format!(
                 "{low_confidence} item(s) matched only by name (low confidence) \

@@ -1,5 +1,26 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+/// Returns the current user's home directory using the platform's standard
+/// environment variables.
+pub fn home_dir() -> Option<PathBuf> {
+    if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(home));
+    }
+
+    #[cfg(windows)]
+    {
+        if let Some(home) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) {
+            return Some(PathBuf::from(home));
+        }
+        let drive = std::env::var_os("HOMEDRIVE")?;
+        let path = std::env::var_os("HOMEPATH")?;
+        return Some(PathBuf::from(drive).join(path));
+    }
+
+    #[cfg(not(windows))]
+    None
+}
 
 /// Total size in bytes of a file/directory tree. Does not follow symlinks
 /// (a symlink contributes only its own length).

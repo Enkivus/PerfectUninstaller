@@ -97,7 +97,11 @@ fn every_candidate_passes_the_safety_guards() {
         let plan = engine.analyze(&app).expect("analyze");
         for candidate in &plan.candidates {
             pu_core::safety::ensure_safe(&candidate.path).unwrap_or_else(|e| {
-                panic!("unsafe candidate for {}: {} ({e})", app.name, candidate.path.display())
+                panic!(
+                    "unsafe candidate for {}: {} ({e})",
+                    app.name,
+                    candidate.path.display()
+                )
             });
         }
     }

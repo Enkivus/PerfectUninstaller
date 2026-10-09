@@ -18,7 +18,10 @@ const UNINSTALL_PATH_WOW64: &str =
     r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall";
 
 fn env_path(name: &str) -> Option<PathBuf> {
-    std::env::var(name).ok().filter(|v| !v.is_empty()).map(PathBuf::from)
+    std::env::var(name)
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
 }
 
 fn search_roots() -> Vec<SearchRoot> {
@@ -50,11 +53,7 @@ fn search_roots() -> Vec<SearchRoot> {
     roots
 }
 
-fn collect_uninstall_key(
-    hive: RegKey,
-    path: &str,
-    out: &mut Vec<InstalledApp>,
-) {
+fn collect_uninstall_key(hive: RegKey, path: &str, out: &mut Vec<InstalledApp>) {
     let Ok(key) = hive.open_subkey(path) else {
         return;
     };
@@ -91,7 +90,12 @@ fn collect_uninstall_key(
             }
         }
         if let Ok(icon) = sub.get_value::<String, _>("DisplayIcon") {
-            let icon_path = icon.split(',').next().unwrap_or(&icon).trim().trim_matches('"');
+            let icon_path = icon
+                .split(',')
+                .next()
+                .unwrap_or(&icon)
+                .trim()
+                .trim_matches('"');
             let path = PathBuf::from(icon_path);
             if let Some(parent) = path.parent() {
                 if parent.is_dir() && !install_paths.contains(&parent.to_path_buf()) {
@@ -120,8 +124,16 @@ impl PlatformBackend for WindowsBackend {
 
     fn discover(&self) -> Result<Vec<InstalledApp>> {
         let mut apps = Vec::new();
-        collect_uninstall_key(RegKey::predef(HKEY_LOCAL_MACHINE), UNINSTALL_PATH, &mut apps);
-        collect_uninstall_key(RegKey::predef(HKEY_LOCAL_MACHINE), UNINSTALL_PATH_WOW64, &mut apps);
+        collect_uninstall_key(
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            UNINSTALL_PATH,
+            &mut apps,
+        );
+        collect_uninstall_key(
+            RegKey::predef(HKEY_LOCAL_MACHINE),
+            UNINSTALL_PATH_WOW64,
+            &mut apps,
+        );
         collect_uninstall_key(RegKey::predef(HKEY_CURRENT_USER), UNINSTALL_PATH, &mut apps);
         apps.sort_by_key(|a| a.name.to_lowercase());
         Ok(apps)
@@ -165,7 +177,10 @@ impl PlatformBackend for WindowsBackend {
                     .into(),
             );
         }
-        let low_confidence = candidates.iter().filter(|c| c.confidence == Confidence::Low).count();
+        let low_confidence = candidates
+            .iter()
+            .filter(|c| c.confidence == Confidence::Low)
+            .count();
         if low_confidence > 0 {
             warnings.push(format!(
                 "{low_confidence} item(s) matched only by name (low confidence) \

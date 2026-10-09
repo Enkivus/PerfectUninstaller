@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::models::{Confidence, TraceCandidate, TraceCategory};
-use crate::safety::normalize;
+use crate::safety::{is_within, normalize};
 use crate::util::estimate_size;
 
 /// One directory the engine searches for residual data.
@@ -55,7 +55,7 @@ fn scan_dir(
         let path = entry.path();
         let normalized = normalize(&path);
 
-        if skip.iter().any(|s| normalized.starts_with(s)) {
+        if skip.iter().any(|s| is_within(&normalized, s)) {
             continue;
         }
 
@@ -144,11 +144,13 @@ fn match_entry(name: &str, query: &Query) -> Option<(Confidence, String)> {
 /// but `com.vendor.application` does not match `com.vendor.app`.
 fn starts_with_token(value: &str, prefix: &str) -> bool {
     match value.strip_prefix(prefix) {
-        Some(rest) => !rest.is_empty()
-            && rest
-                .chars()
-                .next()
-                .is_some_and(|c| matches!(c, '.' | '-' | '_' | ' ')),
+        Some(rest) => {
+            !rest.is_empty()
+                && rest
+                    .chars()
+                    .next()
+                    .is_some_and(|c| matches!(c, '.' | '-' | '_' | ' '))
+        }
         None => false,
     }
 }
@@ -161,7 +163,9 @@ fn strip_ext(name: &str) -> &str {
 }
 
 fn compact(s: &str) -> String {
-    s.chars().filter(|c| !matches!(c, ' ' | '-' | '_' | '.')).collect()
+    s.chars()
+        .filter(|c| !matches!(c, ' ' | '-' | '_' | '.'))
+        .collect()
 }
 
 /// Drops candidates nested inside another candidate (the parent already
@@ -170,7 +174,7 @@ fn dedupe_nested(mut found: Vec<TraceCandidate>) -> Vec<TraceCandidate> {
     found.sort_by(|a, b| a.path.cmp(&b.path));
     let mut kept: Vec<TraceCandidate> = Vec::new();
     for candidate in found {
-        if kept.iter().any(|k| candidate.path.starts_with(&k.path)) {
+        if kept.iter().any(|k| is_within(&candidate.path, &k.path)) {
             continue;
         }
         kept.push(candidate);
@@ -226,27 +230,53 @@ mod tests {
 
     #[test]
     fn matches_identifier_exactly_and_prefixed() {
-        let q = Query { identifier: Some("com.vendor.cool"), name: Some("Cool App") };
-        assert_eq!(match_entry("com.vendor.cool", &q).unwrap().0, Confidence::High);
-        assert_eq!(match_entry("com.vendor.cool.plist", &q).unwrap().0, Confidence::High);
-        assert_eq!(match_entry("com.vendor.cool-2", &q).unwrap().0, Confidence::High);
-        assert_eq!(match_entry("com.vendor.coolant", &q).unwrap().0, Confidence::Low);
+        let q = Query {
+            identifier: Some("com.vendor.cool"),
+            name: Some("Cool App"),
+        };
+        assert_eq!(
+            match_entry("com.vendor.cool", &q).unwrap().0,
+            Confidence::High
+        );
+        assert_eq!(
+            match_entry("com.vendor.cool.plist", &q).unwrap().0,
+            Confidence::High
+        );
+        assert_eq!(
+            match_entry("com.vendor.cool-2", &q).unwrap().0,
+            Confidence::High
+        );
+        assert_eq!(
+            match_entry("com.vendor.coolant", &q).unwrap().0,
+            Confidence::Low
+        );
         assert_eq!(match_entry("Cool App", &q).unwrap().0, Confidence::Medium);
         assert_eq!(match_entry("coolapp", &q).unwrap().0, Confidence::Medium);
-        assert_eq!(match_entry("Cool App leftovers", &q).unwrap().0, Confidence::Low);
+        assert_eq!(
+            match_entry("Cool App leftovers", &q).unwrap().0,
+            Confidence::Low
+        );
         assert!(match_entry("totally-unrelated", &q).is_none());
     }
 
     #[test]
     fn same_vendor_helpers_rank_by_name_overlap() {
-        let q = Query { identifier: Some("org.aseprite.Aseprite"), name: Some("Aseprite") };
+        let q = Query {
+            identifier: Some("org.aseprite.Aseprite"),
+            name: Some("Aseprite"),
+        };
         assert_eq!(
-            match_entry("org.aseprite.AsepriteThumbnailer", &q).unwrap().0,
+            match_entry("org.aseprite.AsepriteThumbnailer", &q)
+                .unwrap()
+                .0,
             Confidence::Medium,
             "same vendor and app name"
         );
 
-        let chrome = Query { identifier: Some("com.google.Chrome"), name: Some("Chrome") };
+        let chrome = Query {
+            identifier: Some("com.google.Chrome"),
+            name: Some("Chrome"),
+        };
         assert_eq!(
             match_entry("com.google.keystone", &chrome).unwrap().0,
             Confidence::Low,
@@ -256,7 +286,10 @@ mod tests {
 
     #[test]
     fn weak_names_never_match() {
-        let q = Query { identifier: None, name: Some("Go") };
+        let q = Query {
+            identifier: None,
+            name: Some("Go"),
+        };
         assert!(match_entry("Go", &q).is_none());
     }
 
@@ -269,12 +302,21 @@ mod tests {
         file(&tree.0.join("deep/nested/com.vendor.cool/inner"), "xx");
         file(&tree.0.join("unrelated/file"), "x");
 
-        let q = Query { identifier: Some("com.vendor.cool"), name: Some("Cool App") };
+        let q = Query {
+            identifier: Some("com.vendor.cool"),
+            name: Some("Cool App"),
+        };
         let found = find_traces(&roots(&tree.0), &q, &[]);
 
         let paths: Vec<String> = found
             .iter()
-            .map(|c| c.path.strip_prefix(&tree.0).unwrap().to_string_lossy().to_string())
+            .map(|c| {
+                c.path
+                    .strip_prefix(&tree.0)
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            })
             .collect();
 
         assert!(paths.contains(&"com.vendor.cool.plist".to_string()));
@@ -282,7 +324,10 @@ mod tests {
         assert!(paths.contains(&"deep/com.vendor.cool".to_string()));
         assert!(paths.contains(&"deep/nested/com.vendor.cool".to_string()));
         assert!(!paths.iter().any(|p| p.contains("unrelated")));
-        assert!(!paths.iter().any(|p| p.contains("cache.db")), "child of matched dir excluded");
+        assert!(
+            !paths.iter().any(|p| p.contains("cache.db")),
+            "child of matched dir excluded"
+        );
     }
 
     #[test]
@@ -291,7 +336,10 @@ mod tests {
         file(&tree.0.join("Cool.app/Contents/MacOS/cool"), "x");
         file(&tree.0.join("com.vendor.cool.plist"), "x");
 
-        let q = Query { identifier: Some("com.vendor.cool"), name: Some("Cool App") };
+        let q = Query {
+            identifier: Some("com.vendor.cool"),
+            name: Some("Cool App"),
+        };
         let found = find_traces(&roots(&tree.0), &q, &[tree.0.join("Cool.app")]);
         assert_eq!(found.len(), 1);
         assert!(found[0].path.ends_with("com.vendor.cool.plist"));

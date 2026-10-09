@@ -17,12 +17,10 @@ pub struct ExportedReport {
     pub audit: Option<PathBuf>,
 }
 
-/// `~/.perfectuninstaller/reports/<app-slug>-<timestamp>`.
+/// `<home>/.perfectuninstaller/reports/<app-slug>-<timestamp>`.
 pub fn default_report_dir(app_name: &str) -> Result<PathBuf> {
-    let home = std::env::var_os("HOME")
-        .filter(|h| !h.is_empty())
-        .map(PathBuf::from)
-        .ok_or_else(|| Error::Other("HOME is not set".into()))?;
+    let home = crate::util::home_dir()
+        .ok_or_else(|| Error::Other("user home directory is not set".into()))?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
     Ok(home
         .join(".perfectuninstaller")
@@ -33,7 +31,13 @@ pub fn default_report_dir(app_name: &str) -> Result<PathBuf> {
 fn slug(name: &str) -> String {
     let mut out: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     out.truncate(40);
     if out.is_empty() {
@@ -136,8 +140,12 @@ pub fn render_html(plan: &RemovalPlan, report: &RemovalReport) -> String {
 
     if !plan.advisories.is_empty() {
         writeln!(html, "<h2>System configuration findings (not changed)</h2>").ok();
-        writeln!(html, "<p class=\"note\">These changes were detected but left in place on purpose. \
-            Run the suggested commands yourself if you want them gone.</p>").ok();
+        writeln!(
+            html,
+            "<p class=\"note\">These changes were detected but left in place on purpose. \
+            Run the suggested commands yourself if you want them gone.</p>"
+        )
+        .ok();
         writeln!(
             html,
             "<table><thead><tr><th>Kind</th><th>Finding</th><th>Detail</th><th>Suggested command</th></tr></thead><tbody>"
@@ -168,8 +176,11 @@ pub fn render_html(plan: &RemovalPlan, report: &RemovalReport) -> String {
         writeln!(html, "</tbody></table>").ok();
     }
 
-    let removed: std::collections::HashMap<&Path, &crate::models::TraceCandidate> =
-        plan.candidates.iter().map(|c| (c.path.as_path(), c)).collect();
+    let removed: std::collections::HashMap<&Path, &crate::models::TraceCandidate> = plan
+        .candidates
+        .iter()
+        .map(|c| (c.path.as_path(), c))
+        .collect();
 
     writeln!(html, "<h2>Removed ({} items)</h2>", report.removed.len()).ok();
     writeln!(
@@ -201,9 +212,19 @@ pub fn render_html(plan: &RemovalPlan, report: &RemovalReport) -> String {
     writeln!(html, "</tbody></table>").ok();
 
     if !report.refused.is_empty() {
-        writeln!(html, "<h2>Refused by safety guards ({})</h2><ul>", report.refused.len()).ok();
+        writeln!(
+            html,
+            "<h2>Refused by safety guards ({})</h2><ul>",
+            report.refused.len()
+        )
+        .ok();
         for path in &report.refused {
-            writeln!(html, "<li class=\"path\">{}</li>", escape(&path.display().to_string())).ok();
+            writeln!(
+                html,
+                "<li class=\"path\">{}</li>",
+                escape(&path.display().to_string())
+            )
+            .ok();
         }
         writeln!(html, "</ul>").ok();
     }

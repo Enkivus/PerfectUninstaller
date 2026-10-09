@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -93,26 +93,26 @@ fn palette_for(_os: Os, dark: bool) -> Palette {
         }
     } else {
         Palette {
-        bg: Color32::from_rgb(243, 246, 248),
-        sidebar: Color32::from_rgb(237, 241, 244),
-        header: Color32::from_rgb(250, 252, 253),
-        card: Color32::WHITE,
-        card_stroke: Color32::from_rgb(224, 230, 234),
-        control: Color32::from_rgb(247, 249, 250),
-        control_hover: Color32::from_rgb(232, 240, 239),
-        control_active: Color32::from_rgb(210, 232, 227),
-        text: Color32::from_rgb(27, 40, 47),
-        dim: Color32::from_rgb(100, 115, 124),
-        accent: Color32::from_rgb(13, 116, 101),
-        accent_fill: Color32::from_rgb(13, 116, 101),
-        accent_soft: Color32::from_rgb(222, 240, 236),
-        danger: Color32::from_rgb(184, 62, 54),
-        danger_fill: Color32::from_rgb(176, 54, 48),
-        ok: Color32::from_rgb(27, 131, 91),
-        warn: Color32::from_rgb(169, 111, 22),
-        border: Color32::from_rgb(215, 224, 227),
-        window_fill: Color32::WHITE,
-        radius: 12,
+            bg: Color32::from_rgb(243, 246, 248),
+            sidebar: Color32::from_rgb(237, 241, 244),
+            header: Color32::from_rgb(250, 252, 253),
+            card: Color32::WHITE,
+            card_stroke: Color32::from_rgb(224, 230, 234),
+            control: Color32::from_rgb(247, 249, 250),
+            control_hover: Color32::from_rgb(232, 240, 239),
+            control_active: Color32::from_rgb(210, 232, 227),
+            text: Color32::from_rgb(27, 40, 47),
+            dim: Color32::from_rgb(100, 115, 124),
+            accent: Color32::from_rgb(13, 116, 101),
+            accent_fill: Color32::from_rgb(13, 116, 101),
+            accent_soft: Color32::from_rgb(222, 240, 236),
+            danger: Color32::from_rgb(184, 62, 54),
+            danger_fill: Color32::from_rgb(176, 54, 48),
+            ok: Color32::from_rgb(27, 131, 91),
+            warn: Color32::from_rgb(169, 111, 22),
+            border: Color32::from_rgb(215, 224, 227),
+            window_fill: Color32::WHITE,
+            radius: 12,
         }
     }
 }
@@ -162,9 +162,17 @@ fn paint_backdrop(ui: &egui::Ui) {
 }
 
 enum Job {
-    Progress { path: String, done: usize, total: usize },
+    Progress {
+        path: String,
+        done: usize,
+        total: usize,
+    },
     Scan(Result<Vec<InstalledApp>, String>),
-    Analyze { app_id: String, generation: u64, result: Result<RemovalPlan, String> },
+    Analyze {
+        app_id: String,
+        generation: u64,
+        result: Result<RemovalPlan, String>,
+    },
     Uninstall(Result<RemovalReport, String>),
 }
 
@@ -250,7 +258,11 @@ impl App {
                         Err(err) => self.error = Some(format!("Scan failed: {err}")),
                     }
                 }
-                Job::Analyze { app_id, generation, result } => {
+                Job::Analyze {
+                    app_id,
+                    generation,
+                    result,
+                } => {
                     if self.selected.as_deref() != Some(app_id.as_str())
                         || generation != self.analysis_generation
                     {
@@ -285,7 +297,9 @@ impl App {
             }
         }
         if self.busy == Busy::Analyze
-            && self.analysis_started.is_some_and(|started| started.elapsed() > Duration::from_secs(15))
+            && self
+                .analysis_started
+                .is_some_and(|started| started.elapsed() > Duration::from_secs(15))
         {
             self.busy = Busy::None;
             self.analysis_started = None;
@@ -329,7 +343,11 @@ impl App {
             let result = std::panic::catch_unwind(|| Engine::new().analyze(&app))
                 .map_err(|_| "the analyzer hit an unexpected error".to_string())
                 .and_then(|result| result.map_err(|e| e.to_string()));
-            let _ = tx.send(Job::Analyze { app_id, generation, result });
+            let _ = tx.send(Job::Analyze {
+                app_id,
+                generation,
+                result,
+            });
             ctx.request_repaint();
         });
     }
@@ -394,7 +412,10 @@ impl App {
 
     fn selected_app_name(&self) -> Option<String> {
         let id = self.selected.as_deref()?;
-        self.apps.iter().find(|a| a.id == id).map(|a| a.name.clone())
+        self.apps
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.name.clone())
     }
 
     fn set_all(&mut self, checked: bool) {
@@ -403,7 +424,8 @@ impl App {
         };
         self.checked.clear();
         if checked {
-            self.checked.extend(plan.candidates.iter().map(|c| c.path.clone()));
+            self.checked
+                .extend(plan.candidates.iter().map(|c| c.path.clone()));
         }
     }
 
@@ -493,34 +515,78 @@ impl eframe::App for App {
 
         if let Some((path, done, total)) = self.progress.clone() {
             egui::Panel::bottom("progress")
-                .frame(egui::Frame::new().fill(pal().header).inner_margin(Margin::symmetric(22, 10)))
+                .frame(
+                    egui::Frame::new()
+                        .fill(pal().header)
+                        .inner_margin(Margin::symmetric(22, 10)),
+                )
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spinner();
                         ui.vertical(|ui| {
-                            ui.label(RichText::new(format!("Removing items · {done} of {total}")).strong().color(pal().text));
-                            ui.label(RichText::new(shorten(&path, 110)).monospace().size(12.0).color(pal().dim));
+                            ui.label(
+                                RichText::new(format!("Removing items · {done} of {total}"))
+                                    .strong()
+                                    .color(pal().text),
+                            );
+                            ui.label(
+                                RichText::new(shorten(&path, 110))
+                                    .monospace()
+                                    .size(12.0)
+                                    .color(pal().dim),
+                            );
                         });
                     });
                     ui.add_space(6.0);
-                    ui.add(egui::ProgressBar::new(done as f32 / total.max(1) as f32).fill(pal().accent).corner_radius(pal().radius).desired_width(f32::INFINITY));
+                    ui.add(
+                        egui::ProgressBar::new(done as f32 / total.max(1) as f32)
+                            .fill(pal().accent)
+                            .corner_radius(pal().radius)
+                            .desired_width(f32::INFINITY),
+                    );
                 });
-        } else if self.plan.is_some() && self.busy == Busy::None && self.confirm == ConfirmStage::None {
-            let plan = self.plan.as_ref().expect("plan checked above");
+        } else if let Some(plan) = self
+            .plan
+            .as_ref()
+            .filter(|_| self.busy == Busy::None && self.confirm == ConfirmStage::None)
+        {
             let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
             let selected_bytes = plan.selected_bytes(&selected);
             egui::Panel::bottom("review_action")
-                .frame(egui::Frame::new().fill(pal().header).stroke(Stroke::new(1.0, pal().border)).inner_margin(Margin::symmetric(22, 12)))
+                .frame(
+                    egui::Frame::new()
+                        .fill(pal().header)
+                        .stroke(Stroke::new(1.0, pal().border))
+                        .inner_margin(Margin::symmetric(22, 12)),
+                )
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         icon(ui, Icon::Shield, pal().accent, 22.0);
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing.y = 2.0;
-                            ui.label(RichText::new(format!("{} locations selected", selected.len())).strong().color(pal().text));
-                            ui.label(RichText::new(format!("About {} · you’ll review every path next", format_bytes(selected_bytes))).size(12.5).color(pal().dim));
+                            ui.label(
+                                RichText::new(format!("{} locations selected", selected.len()))
+                                    .strong()
+                                    .color(pal().text),
+                            );
+                            ui.label(
+                                RichText::new(format!(
+                                    "About {} · you’ll review every path next",
+                                    format_bytes(selected_bytes)
+                                ))
+                                .size(12.5)
+                                .color(pal().dim),
+                            );
                         });
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if danger_icon_text_button(ui, "Review uninstall", Icon::Trash, !selected.is_empty()).clicked() {
+                            if danger_icon_text_button(
+                                ui,
+                                "Review uninstall",
+                                Icon::Trash,
+                                !selected.is_empty(),
+                            )
+                            .clicked()
+                            {
                                 self.confirm = ConfirmStage::Review;
                             }
                         });
@@ -572,13 +638,24 @@ impl App {
             brand_mark(ui);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
-                ui.label(RichText::new("PerfectUninstaller").size(17.0).strong().color(pal().text));
+                ui.label(
+                    RichText::new("PerfectUninstaller")
+                        .size(17.0)
+                        .strong()
+                        .color(pal().text),
+                );
                 ui.label(RichText::new(self.platform).size(12.0).color(pal().dim));
             });
         });
         ui.add_space(20.0);
-        let scan_label = if self.busy == Busy::Scan { "Scanning applications" } else { "Scan applications" };
-        if primary_icon_text_button(ui, scan_label, Icon::Refresh, self.busy == Busy::None).clicked() {
+        let scan_label = if self.busy == Busy::Scan {
+            "Scanning applications"
+        } else {
+            "Scan applications"
+        };
+        if primary_icon_text_button(ui, scan_label, Icon::Refresh, self.busy == Busy::None)
+            .clicked()
+        {
             self.spawn_scan();
         }
         ui.add_space(22.0);
@@ -785,7 +862,12 @@ impl App {
                 avatar(ui, &plan.app.name, 48.0, pal().accent_soft);
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.label(RichText::new(&plan.app.name).size(23.0).strong().color(pal().text));
+                    ui.label(
+                        RichText::new(&plan.app.name)
+                            .size(23.0)
+                            .strong()
+                            .color(pal().text),
+                    );
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     badge(ui, plan.app.method.label(), pal().accent, pal().accent_soft);
@@ -793,7 +875,11 @@ impl App {
             });
         });
 
-        if plan.app.identifier.as_deref().is_some_and(|id| id != plan.app.name.as_str())
+        if plan
+            .app
+            .identifier
+            .as_deref()
+            .is_some_and(|id| id != plan.app.name.as_str())
             || plan.app.version.is_some()
         {
             egui::CollapsingHeader::new("Application details")
@@ -801,10 +887,19 @@ impl App {
                 .default_open(false)
                 .show(ui, |ui| {
                     if let Some(identifier) = &plan.app.identifier {
-                        ui.label(RichText::new(identifier).monospace().small().color(pal().dim));
+                        ui.label(
+                            RichText::new(identifier)
+                                .monospace()
+                                .small()
+                                .color(pal().dim),
+                        );
                     }
                     if let Some(version) = &plan.app.version {
-                        ui.label(RichText::new(format!("Version {version}")).small().color(pal().dim));
+                        ui.label(
+                            RichText::new(format!("Version {version}"))
+                                .small()
+                                .color(pal().dim),
+                        );
                     }
                 });
         }
@@ -814,7 +909,11 @@ impl App {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             icon(ui, Icon::Search, pal().accent, 17.0);
-            ui.label(RichText::new(format!("{} locations found", plan.candidates.len())).strong().color(pal().text));
+            ui.label(
+                RichText::new(format!("{} locations found", plan.candidates.len()))
+                    .strong()
+                    .color(pal().text),
+            );
         });
 
         if !plan.warnings.is_empty() {
@@ -870,31 +969,37 @@ impl App {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 section_title(ui, "Review locations");
-                ui.label(RichText::new("Select the files and folders to include").size(12.5).color(pal().dim));
+                ui.label(
+                    RichText::new("Select the files and folders to include")
+                        .size(12.5)
+                        .color(pal().dim),
+                );
             });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let mut seg_all = egui::Button::new("All")
-                .selected(all_checked)
-                .fill(pal().control);
-            let mut seg_def = egui::Button::new("Recommended")
-                .selected(default_checked)
-                .fill(pal().control);
-            let mut seg_none = egui::Button::new("None")
-                .selected(selected.is_empty())
-                .fill(pal().control);
-            let radius = CornerRadius::same((pal().radius / 2).max(6));
-            seg_all = seg_all.corner_radius(radius).min_size(Vec2::new(0.0, 32.0));
-            seg_def = seg_def.corner_radius(radius).min_size(Vec2::new(0.0, 32.0));
-            seg_none = seg_none.corner_radius(radius).min_size(Vec2::new(0.0, 32.0));
-            if ui.add(seg_all).clicked() {
-                self.set_all(true);
-            }
-            if ui.add(seg_def).clicked() {
-                self.checked = Engine::default_selection(&plan).into_iter().collect();
-            }
-            if ui.add(seg_none).clicked() {
-                self.set_all(false);
-            }
+                let mut seg_all = egui::Button::new("All")
+                    .selected(all_checked)
+                    .fill(pal().control);
+                let mut seg_def = egui::Button::new("Recommended")
+                    .selected(default_checked)
+                    .fill(pal().control);
+                let mut seg_none = egui::Button::new("None")
+                    .selected(selected.is_empty())
+                    .fill(pal().control);
+                let radius = CornerRadius::same((pal().radius / 2).max(6));
+                seg_all = seg_all.corner_radius(radius).min_size(Vec2::new(0.0, 32.0));
+                seg_def = seg_def.corner_radius(radius).min_size(Vec2::new(0.0, 32.0));
+                seg_none = seg_none
+                    .corner_radius(radius)
+                    .min_size(Vec2::new(0.0, 32.0));
+                if ui.add(seg_all).clicked() {
+                    self.set_all(true);
+                }
+                if ui.add(seg_def).clicked() {
+                    self.checked = Engine::default_selection(&plan).into_iter().collect();
+                }
+                if ui.add(seg_none).clicked() {
+                    self.set_all(false);
+                }
             });
         });
         ui.add_space(12.0);
@@ -905,8 +1010,7 @@ impl App {
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 for (category, indices) in &groups {
-                    let cat_bytes: u64 =
-                        indices.iter().map(|&i| plan.candidates[i].bytes).sum();
+                    let cat_bytes: u64 = indices.iter().map(|&i| plan.candidates[i].bytes).sum();
                     let sel_count = indices
                         .iter()
                         .filter(|&&i| self.checked.contains(&plan.candidates[i].path))
@@ -964,7 +1068,11 @@ impl App {
                                     .show(ui, |ui| {
                                         ui.spacing_mut().item_spacing.y = 4.0;
                                         for &i in indices {
-                                            candidate_row(ui, &plan.candidates[i], &mut self.checked);
+                                            candidate_row(
+                                                ui,
+                                                &plan.candidates[i],
+                                                &mut self.checked,
+                                            );
                                             ui.add_space(2.0);
                                         }
                                     });
@@ -981,39 +1089,80 @@ impl App {
             return;
         }
         ui.add_space(4.0);
+        let status_color = if report.success() {
+            pal().ok
+        } else {
+            pal().danger
+        };
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(44.0), Sense::hover());
             ui.painter()
-                .circle_filled(rect.center(), 22.0, rgba(48, 209, 88, 60));
+                .circle_filled(rect.center(), 22.0, status_color.gamma_multiply(0.24));
             ui.painter()
-                .circle_stroke(rect.center(), 22.0, Stroke::new(1.5, pal().ok));
-            paint_icon(ui, rect.shrink(12.0), Icon::Success, pal().ok);
+                .circle_stroke(rect.center(), 22.0, Stroke::new(1.5, status_color));
+            paint_icon(
+                ui,
+                rect.shrink(12.0),
+                if report.success() {
+                    Icon::Success
+                } else {
+                    Icon::Alert
+                },
+                status_color,
+            );
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.label(
-                    RichText::new("Uninstall complete")
-                        .size(23.0)
-                        .strong()
-                        .color(pal().text),
+                    RichText::new(if report.success() {
+                        "Uninstall complete"
+                    } else {
+                        "Uninstall finished with issues"
+                    })
+                    .size(23.0)
+                    .strong()
+                    .color(pal().text),
                 );
                 ui.label(
-                    RichText::new("The selected items were permanently deleted.")
-                        .size(12.5)
-                        .color(pal().dim),
+                    RichText::new(if report.success() {
+                        "The selected items were permanently deleted."
+                    } else {
+                        "Some selected paths were left untouched or could not be removed."
+                    })
+                    .size(12.5)
+                    .color(pal().dim),
                 );
             });
         });
 
         ui.add_space(16.0);
         ui.horizontal(|ui| {
-            stat_card(ui, "Items removed", &format!("{}", report.removed.len()), pal().ok);
-            stat_card(ui, "Space freed", &format_bytes(report.bytes_freed), pal().ok);
-            stat_card(ui, "Duration", &format!("{} ms", report.elapsed_ms), pal().text);
+            stat_card(
+                ui,
+                "Items removed",
+                &format!("{}", report.removed.len()),
+                pal().ok,
+            );
+            stat_card(
+                ui,
+                "Space freed",
+                &format_bytes(report.bytes_freed),
+                pal().ok,
+            );
+            stat_card(
+                ui,
+                "Duration",
+                &format!("{} ms", report.elapsed_ms),
+                pal().text,
+            );
             stat_card(
                 ui,
                 "Problems",
-                &format!("{}", report.failed.len()),
-                if report.failed.is_empty() { pal().ok } else { pal().danger },
+                &format!("{}", report.failed.len() + report.refused.len()),
+                if report.success() {
+                    pal().ok
+                } else {
+                    pal().danger
+                },
             );
         });
 
@@ -1034,7 +1183,11 @@ impl App {
                     glass_card(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 3.0;
                         for path in &report.refused {
-                            ui.label(RichText::new(path.display().to_string()).monospace().size(11.5));
+                            ui.label(
+                                RichText::new(path.display().to_string())
+                                    .monospace()
+                                    .size(11.5),
+                            );
                         }
                     });
                 }
@@ -1136,7 +1289,12 @@ impl App {
 
         let resp = egui::Modal::new(Id::new("confirm_review")).show(ctx, |ui| {
             ui.set_min_width(560.0);
-            ui.label(RichText::new("Step 1 of 2 · Review").color(pal().accent).small().strong());
+            ui.label(
+                RichText::new("Step 1 of 2 · Review")
+                    .color(pal().accent)
+                    .small()
+                    .strong(),
+            );
             ui.add_space(4.0);
             ui.label(
                 RichText::new(format!("Review selected items for “{}”", plan.app.name))
@@ -1145,13 +1303,17 @@ impl App {
             );
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
-                badge(ui, &format!("{} items", selected.len()), pal().accent, pal().accent_soft);
+                badge(
+                    ui,
+                    &format!("{} items", selected.len()),
+                    pal().accent,
+                    pal().accent_soft,
+                );
                 badge(ui, &format_bytes(bytes), pal().accent, pal().accent_soft);
             });
             ui.add_space(6.0);
             ui.label(
-                RichText::new("These are the exact items that will be deleted:")
-                    .color(pal().dim),
+                RichText::new("These are the exact items that will be deleted:").color(pal().dim),
             );
             ui.add_space(8.0);
 
@@ -1220,10 +1382,7 @@ impl App {
                     cancel = true;
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui
-                        .add(primary_button("Continue"))
-                        .clicked()
-                    {
+                    if ui.add(primary_button("Continue")).clicked() {
                         advance = true;
                     }
                 });
@@ -1258,7 +1417,11 @@ impl App {
                     .strong(),
             );
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("Delete these items for {}?", plan.app.name)).size(19.0).strong());
+            ui.label(
+                RichText::new(format!("Delete these items for {}?", plan.app.name))
+                    .size(19.0)
+                    .strong(),
+            );
             ui.add_space(8.0);
             ui.colored_label(
                 pal().danger,
@@ -1311,7 +1474,7 @@ impl App {
                 ui.vertical(|ui| {
                     ui.label(RichText::new("PerfectUninstaller").size(21.0).strong());
                     ui.label(
-                        RichText::new("Complete software removal")
+                        RichText::new("Reviewable app cleanup")
                             .small()
                             .color(pal().dim),
                     );
@@ -1319,9 +1482,9 @@ impl App {
             });
             ui.add_space(12.0);
             ui.label(
-                "Permanently removes an app together with its caches, preferences, containers, \
-                 launch agents, receipts, crash reports and other residual traces — with a full \
-                 audit log and an exportable report.",
+                "Finds common app files and residual traces so you can review what to remove. \
+                 Each run records an audit log and exportable report. Package-managed apps \
+                 may still need to be removed with their package manager.",
             );
             ui.add_space(14.0);
             ui.horizontal(|ui| {
@@ -1354,10 +1517,18 @@ impl App {
 }
 
 fn install_theme(ctx: &egui::Context, dark: bool) {
-    ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
+    ctx.set_theme(if dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    });
     let p = pal();
 
-    let mut visuals = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+    let mut visuals = if dark {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
     visuals.panel_fill = Color32::TRANSPARENT;
     visuals.window_fill = p.window_fill;
     visuals.extreme_bg_color = p.bg;
@@ -1372,7 +1543,11 @@ fn install_theme(ctx: &egui::Context, dark: bool) {
         offset: [0, 10],
         blur: 28,
         spread: 0,
-        color: if dark { rgba(0, 0, 0, 110) } else { rgba(27, 40, 47, 28) },
+        color: if dark {
+            rgba(0, 0, 0, 110)
+        } else {
+            rgba(27, 40, 47, 28)
+        },
     };
 
     let r = CornerRadius::same(p.radius);
@@ -1425,19 +1600,27 @@ fn primary_text() -> Color32 {
 }
 
 fn primary_button(text: &str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
-        .fill(pal().accent_fill)
-        .stroke(Stroke::new(1.0, pal().accent))
-        .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
-        .min_size(Vec2::new(0.0, 34.0))
+    egui::Button::new(
+        RichText::new(text.to_owned())
+            .color(primary_text())
+            .strong(),
+    )
+    .fill(pal().accent_fill)
+    .stroke(Stroke::new(1.0, pal().accent))
+    .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
+    .min_size(Vec2::new(0.0, 34.0))
 }
 
 fn danger_button(text: &str) -> egui::Button<'static> {
-    egui::Button::new(RichText::new(text.to_owned()).color(primary_text()).strong())
-        .fill(pal().danger_fill)
-        .stroke(Stroke::new(1.0, pal().danger))
-        .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
-        .min_size(Vec2::new(0.0, 34.0))
+    egui::Button::new(
+        RichText::new(text.to_owned())
+            .color(primary_text())
+            .strong(),
+    )
+    .fill(pal().danger_fill)
+    .stroke(Stroke::new(1.0, pal().danger))
+    .corner_radius(CornerRadius::same((pal().radius / 2).max(6)))
+    .min_size(Vec2::new(0.0, 34.0))
 }
 
 fn ghost_button(text: impl Into<String>) -> egui::Button<'static> {
@@ -1471,7 +1654,9 @@ fn brand_mark(ui: &mut egui::Ui) {
 }
 
 fn icon_text_button(ui: &mut egui::Ui, text: &str, glyph: Icon) -> egui::Response {
-    let width = (text.chars().count() as f32 * 8.0 + 52.0).max(86.0).min(ui.available_width());
+    let width = (text.chars().count() as f32 * 8.0 + 52.0)
+        .max(86.0)
+        .min(ui.available_width());
     icon_action_button(ui, text, glyph, ActionButtonStyle::Ghost, true, width)
 }
 
@@ -1481,7 +1666,14 @@ fn primary_icon_text_button(
     glyph: Icon,
     enabled: bool,
 ) -> egui::Response {
-    icon_action_button(ui, text, glyph, ActionButtonStyle::Primary, enabled, ui.available_width())
+    icon_action_button(
+        ui,
+        text,
+        glyph,
+        ActionButtonStyle::Primary,
+        enabled,
+        ui.available_width(),
+    )
 }
 
 fn danger_icon_text_button(
@@ -1490,7 +1682,9 @@ fn danger_icon_text_button(
     glyph: Icon,
     enabled: bool,
 ) -> egui::Response {
-    let width = (text.chars().count() as f32 * 8.0 + 62.0).max(220.0).min(ui.available_width());
+    let width = (text.chars().count() as f32 * 8.0 + 62.0)
+        .max(220.0)
+        .min(ui.available_width());
     icon_action_button(ui, text, glyph, ActionButtonStyle::Danger, enabled, width)
 }
 
@@ -1502,16 +1696,27 @@ fn icon_action_button(
     enabled: bool,
     width: f32,
 ) -> egui::Response {
-    let height = match style { ActionButtonStyle::Danger => 42.0, _ => 40.0 };
+    let height = match style {
+        ActionButtonStyle::Danger => 42.0,
+        _ => 40.0,
+    };
     let (rect, response) = ui.allocate_exact_size(
         Vec2::new(width.max(76.0), height),
-        if enabled { Sense::click() } else { Sense::hover() },
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
     );
     let (fill, edge, ink) = match style {
         ActionButtonStyle::Primary if enabled => (pal().accent_fill, pal().accent, Color32::WHITE),
         ActionButtonStyle::Primary => (pal().control, pal().card_stroke, pal().dim),
         ActionButtonStyle::Ghost => (
-            if response.hovered() { pal().control_hover } else { pal().control },
+            if response.hovered() {
+                pal().control_hover
+            } else {
+                pal().control
+            },
             pal().card_stroke,
             if enabled { pal().text } else { pal().dim },
         ),
@@ -1528,7 +1733,12 @@ fn icon_action_button(
     };
     let radius = CornerRadius::same((pal().radius / 2).max(7));
     ui.painter().rect_filled(rect, radius, fill);
-    ui.painter().rect_stroke(rect.shrink(0.5), radius, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
+    ui.painter().rect_stroke(
+        rect.shrink(0.5),
+        radius,
+        Stroke::new(1.0, edge),
+        egui::StrokeKind::Inside,
+    );
     let icon_rect = egui::Rect::from_center_size(
         egui::pos2(rect.left() + 21.0, rect.center().y),
         Vec2::splat(18.0),
@@ -1568,12 +1778,21 @@ fn paint_icon(ui: &egui::Ui, rect: egui::Rect, glyph: Icon, color: Color32) {
                 egui::pos2(rect.left(), rect.top() + s * 0.18),
             ];
             painter.add(egui::Shape::closed_line(points, stroke));
-            seg(egui::pos2(c.x - s * 0.2, c.y), egui::pos2(c.x - s * 0.04, c.y + s * 0.16));
-            seg(egui::pos2(c.x - s * 0.04, c.y + s * 0.16), egui::pos2(c.x + s * 0.23, c.y - s * 0.16));
+            seg(
+                egui::pos2(c.x - s * 0.2, c.y),
+                egui::pos2(c.x - s * 0.04, c.y + s * 0.16),
+            );
+            seg(
+                egui::pos2(c.x - s * 0.04, c.y + s * 0.16),
+                egui::pos2(c.x + s * 0.23, c.y - s * 0.16),
+            );
         }
         Icon::Search => {
             painter.circle_stroke(egui::pos2(c.x - s * 0.08, c.y - s * 0.08), s * 0.28, stroke);
-            seg(egui::pos2(c.x + s * 0.12, c.y + s * 0.12), egui::pos2(c.x + s * 0.34, c.y + s * 0.34));
+            seg(
+                egui::pos2(c.x + s * 0.12, c.y + s * 0.12),
+                egui::pos2(c.x + s * 0.34, c.y + s * 0.34),
+            );
         }
         Icon::Sun => {
             painter.circle_stroke(c, s * 0.2, stroke);
@@ -1585,52 +1804,157 @@ fn paint_icon(ui: &egui::Ui, rect: egui::Rect, glyph: Icon, color: Color32) {
         }
         Icon::Moon => {
             painter.circle_filled(c, s * 0.36, color);
-            painter.circle_filled(egui::pos2(c.x + s * 0.16, c.y - s * 0.15), s * 0.31, pal().control);
+            painter.circle_filled(
+                egui::pos2(c.x + s * 0.16, c.y - s * 0.15),
+                s * 0.31,
+                pal().control,
+            );
         }
         Icon::Refresh => {
             painter.circle_stroke(c, s * 0.32, stroke);
-            seg(egui::pos2(c.x + s * 0.18, c.y - s * 0.28), egui::pos2(c.x + s * 0.36, c.y - s * 0.28));
-            seg(egui::pos2(c.x + s * 0.36, c.y - s * 0.28), egui::pos2(c.x + s * 0.36, c.y - s * 0.1));
+            seg(
+                egui::pos2(c.x + s * 0.18, c.y - s * 0.28),
+                egui::pos2(c.x + s * 0.36, c.y - s * 0.28),
+            );
+            seg(
+                egui::pos2(c.x + s * 0.36, c.y - s * 0.28),
+                egui::pos2(c.x + s * 0.36, c.y - s * 0.1),
+            );
         }
         Icon::Info => {
             painter.circle_stroke(c, s * 0.4, stroke);
             painter.circle_filled(egui::pos2(c.x, c.y - s * 0.18), line * 0.8, color);
-            seg(egui::pos2(c.x, c.y - s * 0.02), egui::pos2(c.x, c.y + s * 0.23));
+            seg(
+                egui::pos2(c.x, c.y - s * 0.02),
+                egui::pos2(c.x, c.y + s * 0.23),
+            );
         }
         Icon::Alert => {
-            painter.add(egui::Shape::closed_line(vec![egui::pos2(c.x, rect.top()), egui::pos2(rect.right(), rect.bottom()), egui::pos2(rect.left(), rect.bottom())], stroke));
-            seg(egui::pos2(c.x, c.y - s * 0.16), egui::pos2(c.x, c.y + s * 0.1));
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    egui::pos2(c.x, rect.top()),
+                    egui::pos2(rect.right(), rect.bottom()),
+                    egui::pos2(rect.left(), rect.bottom()),
+                ],
+                stroke,
+            ));
+            seg(
+                egui::pos2(c.x, c.y - s * 0.16),
+                egui::pos2(c.x, c.y + s * 0.1),
+            );
             painter.circle_filled(egui::pos2(c.x, c.y + s * 0.25), line * 0.7, color);
         }
         Icon::App => {
-            painter.rect_stroke(rect.shrink(s * 0.06), CornerRadius::same((s * 0.12) as u8), stroke, egui::StrokeKind::Inside);
-            seg(egui::pos2(rect.left() + s * 0.06, rect.top() + s * 0.25), egui::pos2(rect.right() - s * 0.06, rect.top() + s * 0.25));
-            for i in 0..3 { painter.circle_filled(egui::pos2(rect.left() + s * (0.17 + i as f32 * 0.13), rect.top() + s * 0.14), line * 0.65, color); }
-            seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.43), egui::pos2(rect.right() - s * 0.2, rect.top() + s * 0.43));
-            seg(egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.59), egui::pos2(rect.right() - s * 0.32, rect.top() + s * 0.59));
+            painter.rect_stroke(
+                rect.shrink(s * 0.06),
+                CornerRadius::same((s * 0.12) as u8),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.06, rect.top() + s * 0.25),
+                egui::pos2(rect.right() - s * 0.06, rect.top() + s * 0.25),
+            );
+            for i in 0..3 {
+                painter.circle_filled(
+                    egui::pos2(
+                        rect.left() + s * (0.17 + i as f32 * 0.13),
+                        rect.top() + s * 0.14,
+                    ),
+                    line * 0.65,
+                    color,
+                );
+            }
+            seg(
+                egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.43),
+                egui::pos2(rect.right() - s * 0.2, rect.top() + s * 0.43),
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.2, rect.top() + s * 0.59),
+                egui::pos2(rect.right() - s * 0.32, rect.top() + s * 0.59),
+            );
         }
         Icon::Check => {
-            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(c.x - s * 0.06, c.y + s * 0.19));
-            seg(egui::pos2(c.x - s * 0.06, c.y + s * 0.19), egui::pos2(rect.right() - s * 0.1, rect.top() + s * 0.18));
+            seg(
+                egui::pos2(rect.left() + s * 0.12, c.y),
+                egui::pos2(c.x - s * 0.06, c.y + s * 0.19),
+            );
+            seg(
+                egui::pos2(c.x - s * 0.06, c.y + s * 0.19),
+                egui::pos2(rect.right() - s * 0.1, rect.top() + s * 0.18),
+            );
         }
         Icon::Back => {
-            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.right() - s * 0.05, c.y));
-            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.left() + s * 0.38, c.y - s * 0.25));
-            seg(egui::pos2(rect.left() + s * 0.12, c.y), egui::pos2(rect.left() + s * 0.38, c.y + s * 0.25));
+            seg(
+                egui::pos2(rect.left() + s * 0.12, c.y),
+                egui::pos2(rect.right() - s * 0.05, c.y),
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.12, c.y),
+                egui::pos2(rect.left() + s * 0.38, c.y - s * 0.25),
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.12, c.y),
+                egui::pos2(rect.left() + s * 0.38, c.y + s * 0.25),
+            );
         }
         Icon::Trash => {
-            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.25, c.y - s * 0.16), egui::pos2(c.x + s * 0.25, c.y + s * 0.36)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
-            seg(egui::pos2(c.x - s * 0.34, c.y - s * 0.24), egui::pos2(c.x + s * 0.34, c.y - s * 0.24));
-            seg(egui::pos2(c.x - s * 0.12, c.y - s * 0.36), egui::pos2(c.x + s * 0.12, c.y - s * 0.36));
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - s * 0.25, c.y - s * 0.16),
+                    egui::pos2(c.x + s * 0.25, c.y + s * 0.36),
+                ),
+                CornerRadius::same(2),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            seg(
+                egui::pos2(c.x - s * 0.34, c.y - s * 0.24),
+                egui::pos2(c.x + s * 0.34, c.y - s * 0.24),
+            );
+            seg(
+                egui::pos2(c.x - s * 0.12, c.y - s * 0.36),
+                egui::pos2(c.x + s * 0.12, c.y - s * 0.36),
+            );
         }
         Icon::Folder => {
-            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16), egui::pos2(rect.right() - s * 0.05, rect.bottom() - s * 0.05)), CornerRadius::same(3), stroke, egui::StrokeKind::Inside);
-            seg(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16), egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32));
-            seg(egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32), egui::pos2(c.x - s * 0.05, c.y - s * 0.32));
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16),
+                    egui::pos2(rect.right() - s * 0.05, rect.bottom() - s * 0.05),
+                ),
+                CornerRadius::same(3),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.05, c.y - s * 0.16),
+                egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32),
+            );
+            seg(
+                egui::pos2(rect.left() + s * 0.05, c.y - s * 0.32),
+                egui::pos2(c.x - s * 0.05, c.y - s * 0.32),
+            );
         }
         Icon::Copy => {
-            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.17, c.y - s * 0.3), egui::pos2(c.x + s * 0.28, c.y + s * 0.23)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
-            painter.rect_stroke(egui::Rect::from_min_max(egui::pos2(c.x - s * 0.3, c.y - s * 0.14), egui::pos2(c.x + s * 0.15, c.y + s * 0.38)), CornerRadius::same(2), stroke, egui::StrokeKind::Inside);
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - s * 0.17, c.y - s * 0.3),
+                    egui::pos2(c.x + s * 0.28, c.y + s * 0.23),
+                ),
+                CornerRadius::same(2),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+            painter.rect_stroke(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - s * 0.3, c.y - s * 0.14),
+                    egui::pos2(c.x + s * 0.15, c.y + s * 0.38),
+                ),
+                CornerRadius::same(2),
+                stroke,
+                egui::StrokeKind::Inside,
+            );
         }
     }
 }
@@ -1653,7 +1977,12 @@ fn glass_card(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
         .show(ui, add_contents);
 }
 
-fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: bool) -> egui::Response {
+fn app_row(
+    ui: &mut egui::Ui,
+    app: &InstalledApp,
+    selected: bool,
+    analyzing: bool,
+) -> egui::Response {
     let width = ui.available_width();
     let height = 68.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
@@ -1681,7 +2010,8 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
                 egui::pos2(rect.left(), rect.top() + 12.0),
                 Vec2::new(3.0, rect.height() - 24.0),
             );
-            ui.painter().rect_filled(bar, CornerRadius::same(2), pal().accent);
+            ui.painter()
+                .rect_filled(bar, CornerRadius::same(2), pal().accent);
         }
 
         let inner = egui::Rect::from_min_max(
@@ -1708,7 +2038,7 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
                             ui.spacing_mut().item_spacing.x = 6.0;
                             ui.label(
                                 RichText::new(&app.name)
-                                .size(15.0)
+                                    .size(15.0)
                                     .strong()
                                     .color(pal().text),
                             );
@@ -1778,11 +2108,7 @@ fn checkbox_ui(ui: &mut egui::Ui, checked: bool, indeterminate: bool) -> egui::R
     response
 }
 
-fn candidate_row(
-    ui: &mut egui::Ui,
-    candidate: &TraceCandidate,
-    checked: &mut HashSet<PathBuf>,
-) {
+fn candidate_row(ui: &mut egui::Ui, candidate: &TraceCandidate, checked: &mut HashSet<PathBuf>) {
     let is_checked = checked.contains(&candidate.path);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
@@ -1893,7 +2219,10 @@ fn confidence_style(confidence: Confidence) -> (&'static str, Color32) {
 fn group_categories(plan: &RemovalPlan) -> Vec<(TraceCategory, Vec<usize>)> {
     let mut groups: Vec<(TraceCategory, Vec<usize>)> = Vec::new();
     for (i, candidate) in plan.candidates.iter().enumerate() {
-        if let Some(group) = groups.iter_mut().find(|(cat, _)| *cat == candidate.category) {
+        if let Some(group) = groups
+            .iter_mut()
+            .find(|(cat, _)| *cat == candidate.category)
+        {
             group.1.push(i);
         } else {
             groups.push((candidate.category, vec![i]));
@@ -1910,7 +2239,10 @@ fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(all(unix, not(target_os = "macos")))]
     let program = "xdg-open";
 
-    std::process::Command::new(program).arg(path).spawn().map(|_| ())
+    std::process::Command::new(program)
+        .arg(path)
+        .spawn()
+        .map(|_| ())
 }
 
 fn shorten(path: &str, max: usize) -> String {
