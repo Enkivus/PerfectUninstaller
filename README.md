@@ -38,4 +38,4 @@ Uninstall audit logs and exported reports are written below `.perfectuninstaller
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+See [LICENSE](LICENSE).
