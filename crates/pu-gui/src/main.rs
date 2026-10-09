@@ -204,8 +204,6 @@ struct App {
     error: Option<String>,
 
     confirm: ConfirmStage,
-    confirm_ack: bool,
-    confirm_name: String,
     show_about: bool,
     dark_mode: bool,
 }
@@ -230,8 +228,6 @@ impl App {
             analysis_generation: 0,
             error: None,
             confirm: ConfirmStage::None,
-            confirm_ack: false,
-            confirm_name: String::new(),
             show_about: false,
             dark_mode: true,
         };
@@ -347,8 +343,6 @@ impl App {
             return;
         }
         self.confirm = ConfirmStage::None;
-        self.confirm_ack = false;
-        self.confirm_name.clear();
         self.busy = Busy::Uninstall;
         self.progress = None;
         let (tx, ctx) = (self.tx.clone(), self.ctx.clone());
@@ -528,8 +522,6 @@ impl eframe::App for App {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if danger_icon_text_button(ui, "Review uninstall", Icon::Trash, !selected.is_empty()).clicked() {
                                 self.confirm = ConfirmStage::Review;
-                                self.confirm_ack = false;
-                                self.confirm_name.clear();
                             }
                         });
                     });
@@ -794,13 +786,6 @@ impl App {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 3.0;
                     ui.label(RichText::new(&plan.app.name).size(23.0).strong().color(pal().text));
-                    if let Some(id) = &plan.app.identifier {
-                        if id != &plan.app.name {
-                            ui.label(RichText::new(id).monospace().size(12.5).color(pal().dim));
-                        }
-                    } else {
-                        ui.label(RichText::new("Application details").size(12.5).color(pal().dim));
-                    }
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     badge(ui, plan.app.method.label(), pal().accent, pal().accent_soft);
@@ -808,16 +793,28 @@ impl App {
             });
         });
 
+        if plan.app.identifier.as_deref().is_some_and(|id| id != plan.app.name.as_str())
+            || plan.app.version.is_some()
+        {
+            egui::CollapsingHeader::new("Application details")
+                .id_salt("application_details")
+                .default_open(false)
+                .show(ui, |ui| {
+                    if let Some(identifier) = &plan.app.identifier {
+                        ui.label(RichText::new(identifier).monospace().small().color(pal().dim));
+                    }
+                    if let Some(version) = &plan.app.version {
+                        ui.label(RichText::new(format!("Version {version}")).small().color(pal().dim));
+                    }
+                });
+        }
+
         let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
 
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             icon(ui, Icon::Search, pal().accent, 17.0);
             ui.label(RichText::new(format!("{} locations found", plan.candidates.len())).strong().color(pal().text));
-            ui.label(RichText::new("·").color(pal().dim));
-            ui.label(RichText::new(format!("{} groups", group_categories(&plan).len())).color(pal().dim));
-            ui.label(RichText::new("·").color(pal().dim));
-            ui.label(RichText::new(format!("about {} total", format_bytes(plan.total_bytes))).color(pal().dim));
         });
 
         if !plan.warnings.is_empty() {
@@ -1142,7 +1139,7 @@ impl App {
             ui.label(RichText::new("Step 1 of 2 · Review").color(pal().accent).small().strong());
             ui.add_space(4.0);
             ui.label(
-                RichText::new(format!("Remove everything for “{}”?", plan.app.name))
+                RichText::new(format!("Review selected items for “{}”", plan.app.name))
                     .size(19.0)
                     .strong(),
             );
@@ -1237,8 +1234,6 @@ impl App {
             self.confirm = ConfirmStage::None;
         } else if advance {
             self.confirm = ConfirmStage::Final;
-            self.confirm_ack = false;
-            self.confirm_name.clear();
         }
     }
 
@@ -1249,11 +1244,7 @@ impl App {
         };
         let selected: Vec<PathBuf> = self.checked.iter().cloned().collect();
         let bytes = plan.selected_bytes(&selected);
-        let typed_ok = self
-            .confirm_name
-            .trim()
-            .eq_ignore_ascii_case(plan.app.name.trim());
-        let can_delete = self.confirm_ack && typed_ok && !selected.is_empty();
+        let can_delete = !selected.is_empty();
         let mut delete = false;
         let mut cancel = false;
         let mut back = false;
@@ -1261,43 +1252,24 @@ impl App {
         let resp = egui::Modal::new(Id::new("confirm_final")).show(ctx, |ui| {
             ui.set_min_width(520.0);
             ui.label(
-                RichText::new("Step 2 of 2 · Final confirmation")
+                RichText::new("Step 2 of 2 · Confirm deletion")
                     .color(pal().danger)
                     .small()
                     .strong(),
             );
             ui.add_space(4.0);
-            ui.label(RichText::new("This cannot be undone").size(19.0).strong());
+            ui.label(RichText::new(format!("Delete these items for {}?", plan.app.name)).size(19.0).strong());
             ui.add_space(8.0);
             ui.colored_label(
                 pal().danger,
                 format!(
-                    "You are about to permanently delete {} item(s) ({}) for “{}”. \
-                     Files are removed immediately — there is no trash and no undo. \
-                     A JSONL audit log and an HTML/JSON report will be kept.",
+                    "This permanently deletes {} selected item(s) ({}) for “{}”. \
+                     Files are removed immediately with no trash or undo.",
                     selected.len(),
                     format_bytes(bytes),
                     plan.app.name
                 ),
             );
-            ui.add_space(12.0);
-
-            ui.checkbox(
-                &mut self.confirm_ack,
-                "I understand this permanently deletes the listed items and cannot be undone.",
-            );
-            ui.add_space(10.0);
-            ui.label(
-                RichText::new(format!("Type “{}” below to confirm:", plan.app.name))
-                    .color(pal().dim),
-            );
-            ui.add_space(4.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut self.confirm_name)
-                    .hint_text(plan.app.name.clone())
-                    .desired_width(f32::INFINITY),
-            );
-
             ui.add_space(14.0);
             ui.horizontal(|ui| {
                 if ui.add(ghost_button("Cancel")).clicked() {
@@ -1319,8 +1291,6 @@ impl App {
 
         if cancel || resp.should_close() {
             self.confirm = ConfirmStage::None;
-            self.confirm_ack = false;
-            self.confirm_name.clear();
         } else if back {
             self.confirm = ConfirmStage::Review;
         } else if delete {
@@ -1746,12 +1716,11 @@ fn app_row(ui: &mut egui::Ui, app: &InstalledApp, selected: bool, analyzing: boo
                                 ui.add(egui::Spinner::new().size(11.0).color(pal().accent));
                             }
                         });
-                        let mut meta = Vec::new();
                         if let Some(version) = &app.version {
-                            meta.push(version.clone());
+                            ui.label(RichText::new(version).size(12.5).color(pal().dim));
+                        } else {
+                            ui.add_space(8.0);
                         }
-                        meta.push(app.method.label().to_string());
-                        ui.label(RichText::new(meta.join(" · ")).size(12.5).color(pal().dim));
                     });
                 });
             },
