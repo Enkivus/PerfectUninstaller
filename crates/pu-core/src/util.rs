@@ -15,7 +15,7 @@ pub fn home_dir() -> Option<PathBuf> {
         }
         let drive = std::env::var_os("HOMEDRIVE")?;
         let path = std::env::var_os("HOMEPATH")?;
-        return Some(PathBuf::from(drive).join(path));
+        Some(PathBuf::from(drive).join(path))
     }
 
     #[cfg(not(windows))]
