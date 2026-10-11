@@ -1,0 +1,18 @@
+[package]
+name = "perfect-uninstaller"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Complete software removal — Tauri front end for the pu-core engine"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+serde.workspace = true
+serde_json.workspace = true
+pu-core = { path = "../../crates/pu-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.8"
