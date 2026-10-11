@@ -9,10 +9,7 @@ description = "Complete software removal — Tauri front end for the pu-core eng
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = [] }
 serde.workspace = true
 serde_json.workspace = true
 pu-core = { path = "../../crates/pu-core" }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-window-vibrancy = "0.8"

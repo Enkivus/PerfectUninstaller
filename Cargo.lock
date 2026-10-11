@@ -2153,7 +2153,6 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
- "window-vibrancy",
 ]
 
 [[package]]

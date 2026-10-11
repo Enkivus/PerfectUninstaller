@@ -2,29 +2,8 @@
 
 mod commands;
 
-use tauri::Manager;
-
 fn main() {
-    let mut builder = tauri::Builder::default();
-
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                // Real macOS vibrancy. In Tauri the webview is a child view, so the
-                // effect view sits *behind* the content and the CSS blur composites on top.
-                let _ = window_vibrancy::apply_vibrancy(
-                    &window,
-                    window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
-                    Some(window_vibrancy::NSVisualEffectState::Active),
-                    Some(0.0),
-                );
-            }
-            Ok(())
-        });
-    }
-
-    builder
+    tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             commands::scan_apps,
             commands::analyze,
