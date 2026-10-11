@@ -316,6 +316,9 @@ input {
 .app-row__body {
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .app-row__name {
@@ -855,9 +858,11 @@ input {
 }
 
 .code {
-  display: block;
-  margin-top: 7px;
-  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 6px 6px 6px 10px;
   border-radius: var(--r-sm);
   background: rgba(0, 0, 0, 0.36);
   border: 1px solid var(--stroke);
@@ -865,8 +870,20 @@ input {
   font-size: 11.5px;
   color: var(--text);
   user-select: text;
+}
+
+.code__text {
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
-  white-space: pre;
+  white-space: nowrap;
+}
+
+.code .btn {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 /* ── Advisory list ──────────────────────────────────────────────────────── */
