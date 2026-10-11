@@ -1,5 +1,5 @@
 import type { RemovalPlan, TraceCandidate, TraceCategory } from "../lib/types";
-import { categoryLabel, formatBytes } from "../lib/types";
+import { categoryLabel, formatBytes, shortenPath } from "../lib/types";
 
 type Props = {
   stage: "review" | "final";
@@ -87,11 +87,9 @@ export function ConfirmDialog({
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        direction: "rtl",
-                        textAlign: "left",
                       }}
                     >
-                      {c.path}
+                      {shortenPath(c.path, 70)}
                     </div>
                   ))}
                 </div>

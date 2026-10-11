@@ -182,3 +182,16 @@ export function monogram(name: string): string {
   const ch = [...name.trim()].find((c) => /[\p{L}\p{N}]/u.test(c));
   return ch ? ch.toUpperCase() : "?";
 }
+
+/**
+ * Shorten a path from the middle so both the root and the meaningful tail stay
+ * readable. Plain CSS ellipsis would hide the filename, and `direction: rtl`
+ * would swallow the leading slash.
+ */
+export function shortenPath(path: string, max = 64): string {
+  const chars = [...path];
+  if (chars.length <= max) return path;
+  const head = Math.ceil((max - 1) * 0.42);
+  const tail = max - 1 - head;
+  return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
+}

@@ -652,8 +652,6 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
   user-select: text;
 }
 
@@ -1081,8 +1079,6 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
 }
 
 /* ── Report ─────────────────────────────────────────────────────────────── */
@@ -1147,4 +1143,14 @@ input {
 }
 .tiny {
   font-size: 11.5px;
+}
+/* Respect the OS reduced-motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

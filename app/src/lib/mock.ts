@@ -95,25 +95,26 @@ const C = (path: string, category: any, confidence: any, bytes: number, reason: 
 
 function plan(app: InstalledApp): RemovalPlan {
   const home = `${P}/Library`;
+  const id = app.identifier ?? app.id;
   return {
     app,
     candidates: [
       C(app.install_paths[0], "Application", "High", app.install_bytes, "Primary install location"),
-      C(`${home}/Caches/${app.identifier}`, "Cache", "High", 1_742_845_952, "Cache directory name matches the bundle identifier"),
+      C(`${home}/Caches/${id}`, "Cache", "High", 1_742_845_952, "Cache directory name matches the bundle identifier"),
       C(`${home}/Caches/${app.name.toLowerCase()}`, "Cache", "Medium", 182_386_688, "Cache directory name matches the app name"),
       C(`${home}/Logs/${app.name}`, "Log", "Medium", 24_117_248, "Log directory name matches the app name"),
-      C(`${home}/Preferences/${app.identifier}.plist`, "Preference", "High", 14_680_064, "Preference file name matches the bundle identifier"),
+      C(`${home}/Preferences/${id}.plist`, "Preference", "High", 14_680_064, "Preference file name matches the bundle identifier"),
       C(`${home}/Application Support/${app.name}`, "Support", "High", 68_787_251, "Application support directory belongs to the app"),
       C(`${home}/Application Support/${app.name}/Cache`, "Support", "Medium", 91_195_392, "Nested cache inside the app support directory"),
-      C(`${home}/WebKit/${app.identifier}`, "WebKit", "Medium", 61_273_088, "WebKit website data matches the bundle identifier"),
-      C(`${home}/HTTPStorages/${app.identifier}`, "HttpStorage", "Medium", 32_505_856, "HTTP storage database matches the bundle identifier"),
-      C(`${home}/Saved Application State/${app.identifier}.savedState`, "SavedState", "High", 4_194_304, "Saved application state matches the bundle identifier"),
-      C(`${home}/Containers/com.${app.identifier.toLowerCase()}`, "Container", "Medium", 12_582_912, "Sandboxed container directory name matches the app"),
+      C(`${home}/WebKit/${id}`, "WebKit", "Medium", 61_273_088, "WebKit website data matches the bundle identifier"),
+      C(`${home}/HTTPStorages/${id}`, "HttpStorage", "Medium", 32_505_856, "HTTP storage database matches the bundle identifier"),
+      C(`${home}/Saved Application State/${id}.savedState`, "SavedState", "High", 4_194_304, "Saved application state matches the bundle identifier"),
+      C(`${home}/Containers/com.${id.toLowerCase()}`, "Container", "Medium", 12_582_912, "Sandboxed container directory name matches the app"),
       C(`${home}/Caches/com.apple.shaderlibs`, "ShaderCache", "Low", 3_355_443, "Shared shader cache may reference this app"),
       C(`${home}/Logs/DiagnosticReports/${app.name}-2025-06-11-*.ips`, "CrashReport", "Low", 1_572_864, "Crash report names the app that produced it"),
-      C(`${home}/LaunchAgents/${app.identifier}.plist`, "LaunchAgent", "Medium", 4_096, "Login item references the bundle identifier"),
+      C(`${home}/LaunchAgents/${id}.plist`, "LaunchAgent", "Medium", 4_096, "Login item references the bundle identifier"),
       C("/Library/LaunchAgents/com.example.helper.plist", "LaunchAgent", "Low", 4_096, "Privileged helper installed by the app"),
-      C(`/var/db/receipts/${app.identifier}.plist`, "Receipt", "High", 16_384, "Installer package receipt"),
+      C(`/var/db/receipts/${id}.plist`, "Receipt", "High", 16_384, "Installer package receipt"),
     ],
     advisories: [
       {
@@ -213,8 +214,23 @@ export function installMock() {
     }
   };
 
+  let nextId = 1;
+  const callbacks = new Map<number, (payload: unknown) => void>();
+
   Object.defineProperty(window, "__TAURI_INTERNALS__", {
-    value: { invoke: impl },
+    value: {
+      invoke: impl,
+      // Tauri's Channel constructor needs this to exist before it can be
+      // passed to a command; the real runtime provides it.
+      transformCallback: (
+        cb: (payload: unknown) => void,
+        _once?: boolean,
+      ) => {
+        const id = nextId++;
+        callbacks.set(id, cb);
+        return id;
+      },
+    },
     writable: true,
   });
 }

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { RemovalPlan, TraceCandidate, TraceCategory } from "../lib/types";
-import { categoryLabel, formatBytes, methodLabel } from "../lib/types";
+import { categoryLabel, formatBytes, methodLabel, shortenPath } from "../lib/types";
 import { CaretIcon, CheckIcon, MinusIcon } from "./icons";
 
 type Group = { category: TraceCategory; items: TraceCandidate[] };
@@ -74,6 +74,7 @@ export function PlanView({
 }) {
   const groups = useMemo(() => group(plan), [plan]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [advOpen, setAdvOpen] = useState(false);
 
   const selectedBytes = useMemo(
     () =>
@@ -135,35 +136,46 @@ export function PlanView({
       </div>
 
       {plan.advisories.length > 0 && (
-        <div className="card mb-14" style={{ padding: 14 }}>
-          <div className="row mb-10">
-            <span className="badge badge--warn">System configuration</span>
-            <span className="tiny dim">
-              {plan.advisories.length} finding
-              {plan.advisories.length === 1 ? "" : "s"} — never changed automatically
-            </span>
-          </div>
-          {plan.advisories.map((a, i) => (
-            <div className="advisory" key={i}>
-              <div className="advisory__head">
-                <span className="advisory__summary">{a.summary}</span>
-              </div>
-              <div className="advisory__detail">{a.detail}</div>
-              {a.path && <div className="advisory__path">{a.path}</div>}
-              {a.command && (
-                <code className="code">
-                  {a.command}
-                  <button
-                    className="btn btn--icon mt-8"
-                    style={{ height: 24 }}
-                    onClick={() => navigator.clipboard?.writeText(a.command!)}
-                  >
-                    Copy
-                  </button>
-                </code>
-              )}
+        <div className={`group mb-14${advOpen ? " is-open" : ""}`}>
+          <button
+            className="group__header"
+            onClick={() => setAdvOpen((v) => !v)}
+          >
+            <CaretIcon className="group__caret" />
+            <div className="col" style={{ flex: 1 }}>
+              <span className="group__name">System configuration</span>
+              <span className="group__meta">
+                {plan.advisories.length} finding
+                {plan.advisories.length === 1 ? "" : "s"} found — never changed
+                automatically
+              </span>
             </div>
-          ))}
+            <span className="badge badge--warn">review</span>
+          </button>
+          {advOpen && (
+            <div className="group__items" style={{ padding: 10 }}>
+              {plan.advisories.map((a, i) => (
+                <div className="advisory" key={i}>
+                  <div className="advisory__head">
+                    <span className="advisory__summary">{a.summary}</span>
+                  </div>
+                  <div className="advisory__detail">{a.detail}</div>
+                  {a.path && <div className="advisory__path">{a.path}</div>}
+                  {a.command && (
+                    <div className="code">
+                      <span className="code__text">{a.command}</span>
+                      <button
+                        className="btn"
+                        onClick={() => navigator.clipboard?.writeText(a.command!)}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -240,7 +252,7 @@ export function PlanView({
                         title={c.path}
                       />
                       <Confidence level={c.confidence} />
-                      <span className="item__path">{c.path}</span>
+                      <span className="item__path">{shortenPath(c.path)}</span>
                       <span className="item__size">{formatBytes(c.bytes)}</span>
                     </div>
                   ))}
