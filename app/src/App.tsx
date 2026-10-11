@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   analyze,
+  appIcons,
   defaultSelection,
+  iconsById,
   scanApps,
   uninstall,
 } from "./lib/api";
@@ -17,13 +19,13 @@ import { ReportView } from "./components/ReportView";
 import { Analyzing, Welcome } from "./components/Stages";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { AboutDialog, ProgressToast } from "./components/Dialogs";
+import { ThemeToggle } from "./components/ThemeToggle";
 
 type Busy = "none" | "scan" | "analyze" | "uninstall";
 
-const IS_MAC = /Mac/i.test(navigator.userAgent);
-
 export default function App() {
   const [apps, setApps] = useState<InstalledApp[]>([]);
+  const [icons, setIcons] = useState<Map<string, string | null>>(new Map());
   const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>("none");
@@ -45,6 +47,12 @@ export default function App() {
     try {
       const found = await scanApps();
       setApps(found);
+      // Artwork is a nice-to-have: a failure here must not break the scan.
+      try {
+        setIcons(iconsById(await appIcons(found)));
+      } catch {
+        setIcons(new Map());
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -181,6 +189,7 @@ export default function App() {
       ) : plan ? (
         <PlanView
           plan={plan}
+          icon={selectedApp ? icons.get(selectedApp.id) : null}
           checked={checked}
           onToggle={toggle}
           onToggleGroup={toggleGroup}
@@ -205,24 +214,13 @@ export default function App() {
   );
 
   return (
-    <div
-      className="shell"
-      style={{ ["--traffic-inset" as string]: IS_MAC ? "78px" : "16px" }}
-    >
-      <header className="titlebar" data-tauri-drag-region>
-        <div className="titlebar__brand" data-tauri-drag-region>
-          <span className="brand-mark" data-tauri-drag-region>
-            ◆
-          </span>
-          <div className="col" data-tauri-drag-region>
-            <span className="titlebar__title" data-tauri-drag-region>
-              PerfectUninstaller
-            </span>
-          </div>
+    <div className="shell">
+      <header className="titlebar">
+        <div className="titlebar__brand">
+          <span className="brand-mark">◆</span>
+          <span className="titlebar__title">PerfectUninstaller</span>
         </div>
-        <span className="badge badge--accent">
-          {apps.length} installed
-        </span>
+        <span className="badge badge--accent">{apps.length} installed</span>
         <div className="titlebar__spacer" />
         <button
           className="btn"
@@ -231,6 +229,7 @@ export default function App() {
         >
           {busy === "scan" ? "Scanning…" : "Scan"}
         </button>
+        <ThemeToggle />
         <button className="btn" onClick={() => setAbout(true)}>
           About
         </button>
@@ -245,6 +244,7 @@ export default function App() {
           onSelect={selectApp}
           scanning={busy === "scan"}
           onScan={runScan}
+          icons={icons}
           searchRef={searchRef}
         />
         {body}

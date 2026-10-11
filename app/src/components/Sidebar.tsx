@@ -1,7 +1,8 @@
 import { useMemo, useRef } from "react";
 import type { InstalledApp } from "../lib/types";
-import { methodLabel, monogram } from "../lib/types";
+import { methodLabel } from "../lib/types";
 import { SearchIcon } from "./icons";
+import { Avatar } from "./Avatar";
 
 type Props = {
   apps: InstalledApp[];
@@ -11,6 +12,7 @@ type Props = {
   onSelect: (app: InstalledApp) => void;
   scanning: boolean;
   onScan: () => void;
+  icons: Map<string, string | null>;
   searchRef?: React.RefObject<HTMLInputElement | null>;
 };
 
@@ -22,6 +24,7 @@ export function Sidebar({
   onSelect,
   scanning,
   onScan,
+  icons,
   searchRef,
 }: Props) {
   const localRef = useRef<HTMLInputElement>(null);
@@ -74,7 +77,7 @@ export function Sidebar({
               className={`app-row${selectedId === app.id ? " is-selected" : ""}`}
               onClick={() => onSelect(app)}
             >
-              <span className="app-row__avatar">{monogram(app.name)}</span>
+              <Avatar name={app.name} icon={icons.get(app.id)} />
               <span className="app-row__body">
                 <span className="app-row__name">{app.name}</span>
                 <span className="app-row__meta">

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { RemovalPlan, TraceCandidate, TraceCategory } from "../lib/types";
 import { categoryLabel, formatBytes, methodLabel, shortenPath } from "../lib/types";
 import { CaretIcon, CheckIcon, MinusIcon } from "./icons";
+import { Avatar } from "./Avatar";
 
 type Group = { category: TraceCategory; items: TraceCandidate[] };
 
@@ -60,6 +61,7 @@ export function PlanView({
   onUninstall,
   onBack,
   busy,
+  icon,
 }: {
   plan: RemovalPlan;
   checked: Set<string>;
@@ -71,6 +73,7 @@ export function PlanView({
   onUninstall: () => void;
   onBack: () => void;
   busy: boolean;
+  icon?: string | null;
 }) {
   const groups = useMemo(() => group(plan), [plan]);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -93,7 +96,9 @@ export function PlanView({
         <button className="btn btn--icon" onClick={onBack} title="Back">
           ‹
         </button>
-        <div className="view-head__avatar">{plan.app.name.slice(0, 1).toUpperCase()}</div>
+        <div className="view-head__avatar">
+          <Avatar name={plan.app.name} icon={icon} size={42} />
+        </div>
         <div className="col">
           <div className="row" style={{ gap: 9 }}>
             <span className="view-head__title">{plan.app.name}</span>

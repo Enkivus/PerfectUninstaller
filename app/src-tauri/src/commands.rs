@@ -4,12 +4,49 @@ use pu_core::{Engine, InstalledApp, RemovalPlan, RemovalReport};
 use serde::Serialize;
 use tauri::ipc::Channel;
 
+use crate::icons;
+
 /// Progress emitted while `Engine::uninstall` walks the selection.
 #[derive(Clone, Serialize)]
 pub struct Progress {
     pub path: String,
     pub done: usize,
     pub total: usize,
+}
+
+/// Icon for one installed app, keyed by the app id.
+///
+/// `None` means "no artwork found"; the UI falls back to a letter avatar, so
+/// this never fails the whole batch.
+#[derive(Clone, Serialize)]
+pub struct AppIcon {
+    pub id: String,
+    pub data_url: Option<String>,
+}
+
+/// Extracts icons for the given apps in one round-trip.
+///
+/// The front end requests this once per scan rather than per row, which keeps
+/// a 70-app list to a single IPC call.
+#[tauri::command]
+pub async fn app_icons(apps: Vec<InstalledApp>) -> Vec<AppIcon> {
+    tauri::async_runtime::spawn_blocking(move || {
+        apps.into_iter()
+            .map(|app| {
+                // Try each install location until one yields artwork.
+                let data_url = app
+                    .install_paths
+                    .iter()
+                    .find_map(|p| icons::icon_data_url(p));
+                AppIcon {
+                    id: app.id,
+                    data_url,
+                }
+            })
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]

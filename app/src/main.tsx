@@ -1,11 +1,22 @@
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { applyTheme, getChoice } from "./lib/theme";
 import "./styles.css";
 
 const isDev = import.meta.env.DEV;
 const params = new URLSearchParams(window.location.search);
 const useMock = isDev && params.has("mock");
+
+// Set the theme before the first paint so there is no light/dark flash.
+// `?theme=light|dark` is a preview-only override used for screenshots; it
+// never persists into the user's stored choice.
+const previewTheme = params.get("theme");
+applyTheme(
+  previewTheme === "light" || previewTheme === "dark"
+    ? previewTheme
+    : getChoice(),
+);
 
 if (useMock) {
   const { installMock } = await import("./lib/mock");
