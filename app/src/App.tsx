@@ -40,50 +40,75 @@ export default function App() {
   const [about, setAbout] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Async work (scan / analyze / uninstall) resolves out of order if the user
+  // clicks around quickly. Each run takes a ticket; only the newest ticket may
+  // commit its result, so a slow `analyze` for app A can never overwrite the
+  // plan of app B that the user selected in the meantime.
+  const opSeq = useRef(0);
+  // Mirrors `busy` for callbacks that must read it without stale-closure risk.
+  const busyRef = useRef<Busy>("none");
+
+  const beginOp = useCallback((next: Busy) => {
+    opSeq.current += 1;
+    busyRef.current = next;
+    setBusy(next);
+    return opSeq.current;
+  }, []);
+
+  const finishOp = useCallback((ticket: number) => {
+    if (ticket !== opSeq.current) return;
+    busyRef.current = "none";
+    setBusy("none");
+  }, []);
+
   const runScan = useCallback(async () => {
-    if (busy === "uninstall") return;
-    setBusy("scan");
+    if (busyRef.current === "uninstall") return;
+    const ticket = beginOp("scan");
     setError(null);
     try {
       const found = await scanApps();
-      setApps(found);
       // Artwork is a nice-to-have: a failure here must not break the scan.
-      try {
-        setIcons(iconsById(await appIcons(found)));
-      } catch {
-        setIcons(new Map());
-      }
+      const artwork = await appIcons(found).catch(() => []);
+      setApps(found);
+      setIcons(iconsById(artwork));
     } catch (e) {
-      setError(String(e));
+      if (ticket === opSeq.current) setError(String(e));
     } finally {
-      setBusy("none");
+      finishOp(ticket);
     }
-  }, [busy]);
+  }, [beginOp, finishOp]);
 
   useEffect(() => {
     void runScan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectApp = useCallback(async (app: InstalledApp) => {
-    setSelectedId(app.id);
-    setPlan(null);
-    setReport(null);
-    setChecked(new Set());
-    setBusy("analyze");
-    setError(null);
-    try {
-      const p = await analyze(app);
-      setPlan(p);
-      const recommended = await defaultSelection(p);
-      setChecked(new Set(recommended));
-    } catch (e) {
-      setError(String(e));
+  const selectApp = useCallback(
+    async (app: InstalledApp) => {
+      const ticket = beginOp("analyze");
+      setSelectedId(app.id);
       setPlan(null);
-    } finally {
-      setBusy("none");
-    }
-  }, []);
+      setReport(null);
+      setChecked(new Set());
+      setError(null);
+      try {
+        const p = await analyze(app);
+        const recommended = await defaultSelection(p);
+        // Discard the result if another app (or another run) was started while
+        // this analysis was in flight.
+        if (ticket !== opSeq.current) return;
+        setPlan(p);
+        setChecked(new Set(recommended));
+      } catch (e) {
+        if (ticket !== opSeq.current) return;
+        setError(String(e));
+        setPlan(null);
+      } finally {
+        finishOp(ticket);
+      }
+    },
+    [beginOp, finishOp],
+  );
 
   const selectedApp = useMemo(
     () => apps.find((a) => a.id === selectedId) ?? null,
@@ -116,9 +141,12 @@ export default function App() {
   );
 
   const runUninstall = useCallback(async () => {
+    // Belt and braces: the UI disables the button while a run is in flight, but
+    // a second concurrent run would delete paths twice.
     if (!plan || selectedCandidates.length === 0) return;
+    if (busyRef.current === "uninstall") return;
+    const ticket = beginOp("uninstall");
     setConfirm(null);
-    setBusy("uninstall");
     setProgress({ path: "", done: 0, total: selectedCandidates.length });
     try {
       const result = await uninstall(
@@ -126,22 +154,25 @@ export default function App() {
         selectedCandidates.map((c) => c.path),
         (p) => setProgress(p),
       );
+      if (ticket !== opSeq.current) return;
       setReport(result);
-      setPlan(null);
       setChecked(new Set());
       setSelectedId(null);
+      // The plan is intentionally kept so the result screen can re-export the
+      // report (the exporter needs it) if the automatic export failed.
     } catch (e) {
-      setError(String(e));
+      if (ticket === opSeq.current) setError(String(e));
     } finally {
       setProgress(null);
-      setBusy("none");
+      finishOp(ticket);
     }
-  }, [plan, selectedCandidates]);
+  }, [plan, selectedCandidates, beginOp, finishOp]);
 
   const goBack = useCallback(() => {
     if (confirm) return;
     if (report) {
       setReport(null);
+      setPlan(null);
       void runScan();
       return;
     }

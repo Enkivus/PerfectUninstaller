@@ -40,10 +40,19 @@ function AutoOpen() {
     let tries = 0;
     const tick = setInterval(() => {
       if (++tries > 40) return clearInterval(tick);
-      const first = document.querySelector<HTMLElement>(".app-row");
-      if (!first) return;
+      const rows = document.querySelectorAll<HTMLElement>(".app-row");
+      if (rows.length < 2) return;
       clearInterval(tick);
-      first.click();
+
+      if (stage === "race") {
+        // Click two apps back to back: the first analysis must be discarded even
+        // though the mock makes it resolve last.
+        rows[0].click();
+        setTimeout(() => rows[1].click(), 60);
+        return;
+      }
+
+      rows[0].click();
       if (stage === "plan") return;
 
       setTimeout(() => {

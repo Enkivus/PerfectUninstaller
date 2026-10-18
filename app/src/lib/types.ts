@@ -143,13 +143,6 @@ const METHOD_LABELS: Record<InstallMethod, string> = {
   Unknown: "Unknown",
 };
 
-const PLATFORM_LABELS: Record<Platform, string> = {
-  Macos: "macOS",
-  Windows: "Windows",
-  Linux: "Linux",
-  Unknown: "Unknown",
-};
-
 const ADVISORY_LABELS: Record<AdvisoryKind, string> = {
   ShellEnv: "Shell environment",
   Firewall: "Firewall rule",
@@ -163,7 +156,6 @@ const ADVISORY_LABELS: Record<AdvisoryKind, string> = {
 
 export const categoryLabel = (c: TraceCategory) => CATEGORY_LABELS[c] ?? c;
 export const methodLabel = (m: InstallMethod) => METHOD_LABELS[m] ?? m;
-export const platformLabel = (p: Platform) => PLATFORM_LABELS[p] ?? p;
 export const advisoryLabel = (k: AdvisoryKind) => ADVISORY_LABELS[k] ?? k;
 
 export function formatBytes(bytes: number): string {

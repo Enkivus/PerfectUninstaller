@@ -59,6 +59,8 @@ cd app && npm install && npm run build && cd ..
 cargo run -p perfect-uninstaller
 ```
 
+`app/src-tauri/build.rs` watches `app/dist`, so changing front-end code and running `npm run build` is enough — `cargo build` picks up the new assets on its own. Without that, a `dist`-only change would not recompile anything and the app would keep serving the previous UI.
+
 Checks:
 
 ```sh
@@ -95,6 +97,14 @@ npm run dev
 ```
 
 Then open `http://localhost:1420`. Append `&stage=plan`, `&stage=final`, or `&stage=report` to jump straight to a screen, and `&theme=light` or `&theme=dark` to preview a specific theme. This mock is only enabled in development builds and is excluded from production bundles. Remember to run `npm run build` before `cargo build` to see your changes in the packaged app.
+
+A few flags exist to reproduce specific states that are otherwise hard to reach:
+
+| Flag | Reproduces |
+|------|-------------|
+| `&stage=race` | clicks two apps back to back, so a slow analysis races a fast one |
+| `&slowFirst=1` | makes the first analysis resolve last, exposing out-of-order results |
+| `&exportFails=1` | an automatic report export that fails, showing the retry affordance |
 
 ## Reports
 

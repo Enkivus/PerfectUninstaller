@@ -50,6 +50,9 @@ export function ConfirmDialog({
       {stage === "review" ? (
         <div
           className="modal modal--wide"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Review removal"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="modal__body">
@@ -107,7 +110,13 @@ export function ConfirmDialog({
           </div>
         </div>
       ) : (
-        <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Final confirmation"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="modal__body">
             <div className="modal__eyebrow" style={{ color: "var(--danger)" }}>
               Step 2 of 2 · Final confirmation

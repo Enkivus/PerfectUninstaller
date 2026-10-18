@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
 import type { RemovalPlan, TraceCandidate, TraceCategory } from "../lib/types";
-import { categoryLabel, formatBytes, methodLabel, shortenPath } from "../lib/types";
+import {
+  advisoryLabel,
+  categoryLabel,
+  formatBytes,
+  methodLabel,
+  shortenPath,
+} from "../lib/types";
 import { CaretIcon, CheckIcon, MinusIcon } from "./icons";
 import { Avatar } from "./Avatar";
 
@@ -163,6 +169,7 @@ export function PlanView({
                 <div className="advisory" key={i}>
                   <div className="advisory__head">
                     <span className="advisory__summary">{a.summary}</span>
+                    <span className="badge">{advisoryLabel(a.kind)}</span>
                   </div>
                   <div className="advisory__detail">{a.detail}</div>
                   {a.path && <div className="advisory__path">{a.path}</div>}

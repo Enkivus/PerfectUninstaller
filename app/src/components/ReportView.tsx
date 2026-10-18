@@ -1,6 +1,7 @@
+import { useState } from "react";
 import type { RemovalPlan, RemovalReport } from "../lib/types";
 import { formatBytes } from "../lib/types";
-import { openPath } from "../lib/api";
+import { exportReport, openPath } from "../lib/api";
 
 export function ReportView({
   report,
@@ -11,6 +12,25 @@ export function ReportView({
   plan: RemovalPlan | null;
   onBack: () => void;
 }) {
+  // The automatic export can fail (read-only home, disk full). Keeping the plan
+  // around lets the user retry it here rather than re-running the removal.
+  const [dir, setDir] = useState(report.report_dir);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  const reExport = async () => {
+    if (!plan) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      setDir(await exportReport(plan, report));
+    } catch (e) {
+      setRetryError(String(e));
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   return (
     <>
       <div className="view-head">
@@ -107,32 +127,25 @@ export function ReportView({
         </div>
       )}
 
-      {report.report_dir && (
+      {dir && (
         <div className="card" style={{ padding: 13 }}>
           <div className="col mb-10">
             <span className="tiny dim">Exported report</span>
-            <span className="mono faint">{report.report_dir}</span>
+            <span className="mono faint">{dir}</span>
           </div>
           <div className="action-row">
             <button
               className="btn btn--primary"
-              onClick={() =>
-                openPath(`${report.report_dir}/report.html`)
-              }
+              onClick={() => openPath(`${dir}/report.html`)}
             >
               Open HTML report
             </button>
-            <button
-              className="btn"
-              onClick={() => openPath(report.report_dir!)}
-            >
+            <button className="btn" onClick={() => openPath(dir)}>
               Open folder
             </button>
             <button
               className="btn"
-              onClick={() =>
-                navigator.clipboard?.writeText(report.report_dir!)
-              }
+              onClick={() => navigator.clipboard?.writeText(dir)}
             >
               Copy path
             </button>
@@ -140,9 +153,25 @@ export function ReportView({
         </div>
       )}
 
-      {plan && !report.report_dir && (
-        <div className="mt-12 tiny faint">
-          The engine writes the full report automatically after each removal.
+      {!dir && plan && (
+        <div className="notice notice--warn">
+          <span className="notice__icon">⚠</span>
+          <div style={{ flex: 1 }}>
+            The report could not be written automatically. The removal itself is
+            complete and the audit log was still written.
+            {retryError && (
+              <div className="advisory__path mt-8">{retryError}</div>
+            )}
+            <div className="mt-12">
+              <button
+                className="btn"
+                disabled={retrying}
+                onClick={reExport}
+              >
+                {retrying ? "Exporting…" : "Try exporting again"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>

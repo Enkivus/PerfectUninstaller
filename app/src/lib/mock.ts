@@ -208,8 +208,15 @@ export function installMock() {
           })),
           250,
         );
-      case "analyze":
-        return sleep(plan(args.app), 1400);
+      case "analyze": {
+        // `?slowFirst=1` makes the FIRST analyze resolve last, which is how the
+        // out-of-order race in App.tsx is reproduced deterministically.
+        const first = args.app.id === apps[0].id;
+        const delay = first && new URLSearchParams(location.search).has("slowFirst")
+          ? 2600
+          : 200;
+        return sleep(plan(args.app), delay);
+      }
       case "default_selection": {
         const p = args.plan as RemovalPlan;
         return sleep(
@@ -230,9 +237,17 @@ export function installMock() {
           });
           await new Promise((r) => setTimeout(r, 220));
         }
+        // `?exportFails=1` simulates an automatic export that failed, so the
+        // retry affordance on the result screen can be exercised.
+        if (new URLSearchParams(location.search).has("exportFails")) {
+          return sleep({ ...report, report_dir: null }, 300);
+        }
         return sleep(report, 300);
       }
       case "export_report":
+        if (new URLSearchParams(location.search).has("exportFails")) {
+          throw new Error("no space left on device");
+        }
         return report.report_dir;
       case "open_path":
         return null;

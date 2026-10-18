@@ -22,7 +22,13 @@ export function ProgressToast({ progress }: { progress: Progress }) {
 export function AboutDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="About PerfectUninstaller"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal__body">
           <div className="row" style={{ gap: 12 }}>
             <div
